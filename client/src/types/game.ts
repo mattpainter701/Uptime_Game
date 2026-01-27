@@ -108,6 +108,25 @@ export interface GameConfig {
   enforceTimeLimits: boolean;
 }
 
+// Player 3D position and state
+export type PlayerPose = 'seated' | 'standing' | 'walking';
+
+export interface PlayerPosition {
+  x: number;
+  y: number;
+  z: number;
+  rotation: number; // Y-axis rotation in radians
+  pose: PlayerPose;
+  isMoving: boolean;
+}
+
+export interface MovementState {
+  forward: boolean;
+  backward: boolean;
+  left: boolean;
+  right: boolean;
+}
+
 // Career progression
 export const CAREER_LEVELS = [
   { level: 1, title: 'Help Desk Tech', floor: 5, xpRequired: 0 },

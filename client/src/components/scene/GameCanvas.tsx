@@ -1,10 +1,11 @@
-import { Suspense } from 'react';
+import { Suspense, useRef, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import { Office } from './Office';
 import { Lighting } from './Lighting';
 import { useGameStore } from '../../store/gameStore';
+import type { OrbitControls as OrbitControlsType } from 'three-stdlib';
 
 function LoadingFallback() {
   return (
@@ -55,6 +56,30 @@ function Scene() {
   );
 }
 
+function CameraController() {
+  const controlsRef = useRef<OrbitControlsType>(null);
+  const playerPosition = useGameStore((state) => state.playerPosition);
+
+  // Disable orbit controls when player is standing (camera follows player)
+  useEffect(() => {
+    if (controlsRef.current) {
+      controlsRef.current.enabled = playerPosition.pose === 'seated';
+    }
+  }, [playerPosition.pose]);
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      enableDamping
+      dampingFactor={0.05}
+      minDistance={2}
+      maxDistance={12}
+      maxPolarAngle={Math.PI / 2.1}
+      target={[0, 1.2, -1]}
+    />
+  );
+}
+
 export function GameCanvas() {
   return (
     <div className="absolute inset-0">
@@ -85,15 +110,8 @@ export function GameCanvas() {
         {/* Scene content */}
         <Scene />
 
-        {/* Camera controls */}
-        <OrbitControls
-          enableDamping
-          dampingFactor={0.05}
-          minDistance={2}
-          maxDistance={12}
-          maxPolarAngle={Math.PI / 2.1}
-          target={[0, 1.2, -1]}
-        />
+        {/* Camera controls - disabled when player is walking */}
+        <CameraController />
       </Canvas>
     </div>
   );

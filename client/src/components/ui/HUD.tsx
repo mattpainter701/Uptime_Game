@@ -18,7 +18,7 @@ function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
 }
 
 export function HUD() {
-  const { player, activeTicket, currentView, setView, uptime, failTicket } = useGameStore();
+  const { player, activeTicket, currentView, setView, uptime, failTicket, playerPosition } = useGameStore();
 
   return (
     <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none">
@@ -49,16 +49,43 @@ export function HUD() {
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="glass-panel px-4 py-2 flex items-center gap-6">
+        {/* Stats - Cash, Uptime, Reputation */}
+        <div className="glass-panel px-4 py-2 flex items-center gap-4">
+          {/* Cash */}
           <div className="flex items-center gap-2">
-            <span className="text-xl">💰</span>
+            <span className="text-xl">💵</span>
             <div>
-              <div className="text-xs text-gray-400">Credits</div>
+              <div className="text-xs text-gray-400">Cash</div>
               <div className="text-lg font-bold text-green-400">${player.credits.toLocaleString()}</div>
             </div>
           </div>
 
+          <div className="w-px h-8 bg-gray-600" />
+
+          {/* Uptime Clock - Center */}
+          <div className="flex items-center gap-2">
+            <span className="text-xl">⏱️</span>
+            <div>
+              <div className="text-xs text-gray-400">Uptime</div>
+              {uptime.isTracking ? (
+                <div className="flex items-center gap-2">
+                  <span className={`text-lg font-bold font-mono ${
+                    uptime.uptimePercentage >= 99 ? 'text-green-400' :
+                    uptime.uptimePercentage >= 95 ? 'text-yellow-400' : 'text-red-400'
+                  }`}>
+                    {uptime.uptimePercentage.toFixed(1)}%
+                  </span>
+                  <span className="text-xs text-green-400">+{uptime.pointsEarned}</span>
+                </div>
+              ) : (
+                <div className="text-lg font-bold text-gray-500">--.--%</div>
+              )}
+            </div>
+          </div>
+
+          <div className="w-px h-8 bg-gray-600" />
+
+          {/* Reputation */}
           <div className="flex items-center gap-2">
             <span className="text-xl">⭐</span>
             <div>
@@ -67,6 +94,9 @@ export function HUD() {
             </div>
           </div>
 
+          <div className="w-px h-8 bg-gray-600" />
+
+          {/* XP */}
           <div className="flex items-center gap-2">
             <span className="text-xl">📊</span>
             <div>
@@ -159,6 +189,29 @@ export function HUD() {
               >
                 Abandon
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Movement Controls Hint - Bottom of screen */}
+      {currentView === 'office' && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto">
+          <div className="glass-panel px-4 py-2 text-center">
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-gray-400">
+                <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">SPACE</kbd>
+                <span className="ml-2">{playerPosition.pose === 'seated' ? 'Stand Up' : 'Sit Down'}</span>
+              </span>
+              {playerPosition.pose !== 'seated' && (
+                <>
+                  <span className="text-gray-500">|</span>
+                  <span className="text-gray-400">
+                    <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">WASD</kbd>
+                    <span className="ml-2">Move</span>
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>

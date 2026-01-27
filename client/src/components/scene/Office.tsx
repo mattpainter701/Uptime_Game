@@ -4,6 +4,7 @@ import { Float } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGameStore } from '../../store/gameStore';
 import { Character } from './Character';
+import { PlayerController } from './PlayerController';
 
 // Colors - Cyberpunk office palette
 const COLORS = {
@@ -760,6 +761,7 @@ function NeonDecor() {
 // Main Office component
 export function Office() {
   const setView = useGameStore((state) => state.setView);
+  const playerPosition = useGameStore((state) => state.playerPosition);
 
   return (
     <group>
@@ -778,8 +780,13 @@ export function Office() {
       <GamingMouse />
       <PCTower />
 
-      {/* Character */}
-      <Character position={[0, 0, -1]} />
+      {/* Player Character with Controller */}
+      <PlayerController>
+        <Character
+          pose={playerPosition.pose}
+          isMoving={playerPosition.isMoving}
+        />
+      </PlayerController>
 
       {/* Decorations */}
       <DeskItems />

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig } from '../types/game';
+import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState } from '../types/game';
 import { api, type UptimeUpdate } from '../services/api';
 import { UptimeWebSocket } from '../services/websocket';
 
@@ -38,6 +38,10 @@ interface GameState {
   ticketTimeRemaining: number | null;
   ticketTimerInterval: ReturnType<typeof setInterval> | null;
 
+  // Player 3D position and movement
+  playerPosition: PlayerPosition;
+  movement: MovementState;
+
   // Actions
   setView: (view: GameView) => void;
   setActiveTicket: (ticket: Ticket | null) => void;
@@ -71,6 +75,13 @@ interface GameState {
 
   // Settings actions
   updateSettings: (settings: Partial<GameSettings>) => void;
+
+  // Player movement actions
+  setPlayerPosition: (position: Partial<PlayerPosition>) => void;
+  setMovement: (movement: Partial<MovementState>) => void;
+  standUp: () => void;
+  sitDown: () => void;
+  toggleStand: () => void;
 }
 
 // Sample tickets for demo
@@ -227,6 +238,24 @@ export const useGameStore = create<GameState>()(
       // Timer state
       ticketTimeRemaining: null,
       ticketTimerInterval: null,
+
+      // Player 3D position - starts seated at desk
+      playerPosition: {
+        x: 0,
+        y: 0,
+        z: 0.8, // In front of desk
+        rotation: 0,
+        pose: 'seated',
+        isMoving: false,
+      },
+
+      // Movement keys state
+      movement: {
+        forward: false,
+        backward: false,
+        left: false,
+        right: false,
+      },
 
       // View actions
       setView: (view) => set({ currentView: view }),
@@ -525,6 +554,44 @@ export const useGameStore = create<GameState>()(
       updateSettings: (newSettings) => set((state) => ({
         settings: { ...state.settings, ...newSettings }
       })),
+
+      // Player movement actions
+      setPlayerPosition: (position) => set((state) => ({
+        playerPosition: { ...state.playerPosition, ...position }
+      })),
+
+      setMovement: (movement) => set((state) => ({
+        movement: { ...state.movement, ...movement }
+      })),
+
+      standUp: () => set((state) => ({
+        playerPosition: {
+          ...state.playerPosition,
+          pose: 'standing',
+          y: 0,
+        }
+      })),
+
+      sitDown: () => set((state) => ({
+        playerPosition: {
+          x: 0,
+          y: 0,
+          z: 0.8,
+          rotation: 0,
+          pose: 'seated',
+          isMoving: false,
+        },
+        movement: { forward: false, backward: false, left: false, right: false }
+      })),
+
+      toggleStand: () => {
+        const { playerPosition } = get();
+        if (playerPosition.pose === 'seated') {
+          get().standUp();
+        } else {
+          get().sitDown();
+        }
+      },
     }),
     {
       name: 'netops-tower-save',
