@@ -9,6 +9,7 @@ const CATEGORY_INFO: Record<TicketCategory, { icon: string; color: string; label
   'security': { icon: '🔒', color: 'text-red-400', label: 'Security' },
   'systems': { icon: '🖥️', color: 'text-purple-400', label: 'Systems' },
   'automation': { icon: '🤖', color: 'text-cyan-400', label: 'Automation' },
+  'high-availability': { icon: '🔄', color: 'text-orange-400', label: 'High Availability' },
 };
 
 function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {

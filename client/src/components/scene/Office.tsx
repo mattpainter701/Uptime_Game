@@ -195,7 +195,7 @@ function MonitorSetup() {
 // Gaming chair
 function GamingChair() {
   return (
-    <group position={[0, 0, -1]}>
+    <group position={[0, 0, -1]} rotation={[0, Math.PI, 0]}>
       {/* Seat cushion */}
       <mesh position={[0, 0.48, 0]} castShadow>
         <boxGeometry args={[0.5, 0.1, 0.5]} />

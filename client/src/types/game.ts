@@ -34,7 +34,8 @@ export type TicketCategory =
   | 'routing'
   | 'security'
   | 'systems'
-  | 'automation';
+  | 'automation'
+  | 'high-availability';
 
 export interface TicketHint {
   cost: number;
