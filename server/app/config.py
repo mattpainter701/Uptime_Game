@@ -27,6 +27,23 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expiration: int = 3600  # 1 hour
 
+    # Uptime Tracking
+    uptime_check_interval: int = 30  # seconds between status polls
+    uptime_points_per_minute: int = 1  # base points earned per minute of uptime
+    uptime_bonus_threshold: float = 99.0  # % uptime for bonus multiplier
+    uptime_bonus_multiplier: float = 1.5  # multiplier when above threshold
+
+    # Penalties
+    downtime_penalty_per_minute: int = 5  # points lost per minute of downtime
+    reputation_loss_per_incident: int = 2  # reputation hit per downtime event
+
+    # Ticket Time Limits
+    enforce_time_limits: bool = True  # enable ticket countdown timers
+
+    # EVE-NG Timeouts
+    eveng_timeout: int = 30  # seconds for API requests
+    eveng_console_timeout: int = 10  # seconds for console connectivity check
+
     @property
     def eveng_base_url(self) -> str:
         return f"{self.eveng_protocol}://{self.eveng_host}"

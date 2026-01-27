@@ -75,6 +75,39 @@ export interface GameSettings {
   terminalFontSize: number;
 }
 
+// Uptime tracking types
+export interface NodeUptimeStats {
+  nodeId: number;
+  nodeName: string;
+  status: 'stopped' | 'starting' | 'running' | 'stopping';
+  isResponsive: boolean;
+  uptimeSeconds: number;
+  downtimeSeconds: number;
+  incidentCount: number;
+}
+
+export interface UptimeState {
+  sessionId: string | null;
+  isTracking: boolean;
+  startedAt: number | null;
+  nodes: Record<number, NodeUptimeStats>;
+  totalUptimeSeconds: number;
+  totalDowntimeSeconds: number;
+  uptimePercentage: number;
+  pointsEarned: number;
+  totalIncidents: number;
+}
+
+export interface GameConfig {
+  uptimeCheckInterval: number;
+  uptimePointsPerMinute: number;
+  uptimeBonusThreshold: number;
+  uptimeBonusMultiplier: number;
+  downtimePenaltyPerMinute: number;
+  reputationLossPerIncident: number;
+  enforceTimeLimits: boolean;
+}
+
 // Career progression
 export const CAREER_LEVELS = [
   { level: 1, title: 'Help Desk Tech', floor: 5, xpRequired: 0 },

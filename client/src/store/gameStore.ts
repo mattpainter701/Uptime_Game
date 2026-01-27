@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay } from '../types/game';
+import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig } from '../types/game';
+import { api, type UptimeUpdate } from '../services/api';
+import { UptimeWebSocket } from '../services/websocket';
 
 interface GameState {
   // Player state
@@ -22,8 +24,19 @@ interface GameState {
   // Settings
   settings: GameSettings;
 
+  // Game config (from server)
+  gameConfig: GameConfig | null;
+
   // Connected terminal node
   connectedNodeId: number | null;
+
+  // Uptime tracking
+  uptime: UptimeState;
+  uptimeWs: UptimeWebSocket | null;
+
+  // Ticket timer
+  ticketTimeRemaining: number | null;
+  ticketTimerInterval: ReturnType<typeof setInterval> | null;
 
   // Actions
   setView: (view: GameView) => void;
@@ -42,6 +55,19 @@ interface GameState {
   completeTicket: () => void;
   failTicket: () => void;
   revealHint: (hintIndex: number) => void;
+
+  // Uptime actions
+  startUptimeTracking: (labPath: string, nodeIds: number[]) => Promise<void>;
+  stopUptimeTracking: () => Promise<{ points: number; bonus: number } | null>;
+  updateUptimeStats: (update: UptimeUpdate) => void;
+
+  // Timer actions
+  startTicketTimer: () => void;
+  stopTicketTimer: () => void;
+  tickTimer: () => void;
+
+  // Config actions
+  loadGameConfig: () => Promise<void>;
 
   // Settings actions
   updateSettings: (settings: Partial<GameSettings>) => void;
@@ -182,6 +208,26 @@ export const useGameStore = create<GameState>()(
         terminalFontSize: 14,
       },
 
+      gameConfig: null,
+
+      // Uptime tracking initial state
+      uptime: {
+        sessionId: null,
+        isTracking: false,
+        startedAt: null,
+        nodes: {},
+        totalUptimeSeconds: 0,
+        totalDowntimeSeconds: 0,
+        uptimePercentage: 100,
+        pointsEarned: 0,
+        totalIncidents: 0,
+      },
+      uptimeWs: null,
+
+      // Timer state
+      ticketTimeRemaining: null,
+      ticketTimerInterval: null,
+
       // View actions
       setView: (view) => set({ currentView: view }),
 
@@ -218,15 +264,50 @@ export const useGameStore = create<GameState>()(
       })),
 
       // Ticket actions
-      acceptTicket: (ticket) => set((state) => ({
-        activeTicket: { ...ticket, status: 'active', startedAt: Date.now() },
-        availableTickets: state.availableTickets.filter(t => t.id !== ticket.id),
-        currentView: 'terminal',
-      })),
+      acceptTicket: (ticket) => {
+        set((state) => ({
+          activeTicket: { ...ticket, status: 'active', startedAt: Date.now() },
+          availableTickets: state.availableTickets.filter(t => t.id !== ticket.id),
+          currentView: 'terminal',
+        }));
 
-      completeTicket: () => {
-        const { activeTicket } = get();
+        // Start ticket timer
+        get().startTicketTimer();
+
+        // Note: Uptime tracking should be started when lab nodes are available
+        // This would typically happen after lab is loaded
+      },
+
+      completeTicket: async () => {
+        const { activeTicket, uptime } = get();
         if (!activeTicket) return;
+
+        // Stop timer
+        get().stopTicketTimer();
+
+        // Stop uptime tracking and get final stats
+        let uptimeBonus = 1.0;
+        let uptimePoints = 0;
+
+        if (uptime.isTracking) {
+          const result = await get().stopUptimeTracking();
+          if (result) {
+            uptimePoints = result.points;
+            uptimeBonus = result.bonus;
+          }
+        } else {
+          // Use local uptime stats if not connected to server
+          if (uptime.uptimePercentage >= 99) uptimeBonus = 1.5;
+          else if (uptime.uptimePercentage >= 95) uptimeBonus = 1.2;
+          uptimePoints = uptime.pointsEarned;
+        }
+
+        // Calculate rewards with bonus
+        const baseCredits = activeTicket.rewardCredits;
+        const baseXp = activeTicket.rewardXp;
+        const totalCredits = Math.floor(baseCredits * uptimeBonus) + uptimePoints;
+        const totalXp = Math.floor(baseXp * uptimeBonus);
+        const reputationGain = Math.max(1, 10 - uptime.totalIncidents);
 
         set({
           activeTicket: null,
@@ -235,20 +316,39 @@ export const useGameStore = create<GameState>()(
         });
 
         // Add rewards
-        get().addCredits(activeTicket.rewardCredits);
-        get().addXp(activeTicket.rewardXp);
-        get().addReputation(10);
+        get().addCredits(totalCredits);
+        get().addXp(totalXp);
+        get().addReputation(reputationGain);
       },
 
-      failTicket: () => set((state) => {
-        if (!state.activeTicket) return state;
-        return {
-          activeTicket: null,
-          activeLab: null,
-          currentView: 'office',
-          player: { ...state.player, reputation: Math.max(0, state.player.reputation - 5) }
-        };
-      }),
+      failTicket: () => {
+        // Stop timer and uptime tracking
+        get().stopTicketTimer();
+        const { uptimeWs } = get();
+        uptimeWs?.disconnect();
+
+        set((state) => {
+          if (!state.activeTicket) return state;
+          return {
+            activeTicket: null,
+            activeLab: null,
+            currentView: 'office',
+            player: { ...state.player, reputation: Math.max(0, state.player.reputation - 5) },
+            uptime: {
+              sessionId: null,
+              isTracking: false,
+              startedAt: null,
+              nodes: {},
+              totalUptimeSeconds: 0,
+              totalDowntimeSeconds: 0,
+              uptimePercentage: 100,
+              pointsEarned: 0,
+              totalIncidents: 0,
+            },
+            uptimeWs: null,
+          };
+        });
+      },
 
       revealHint: (hintIndex) => set((state) => {
         if (!state.activeTicket) return state;
@@ -263,6 +363,163 @@ export const useGameStore = create<GameState>()(
           player: { ...state.player, credits: state.player.credits - hint.cost }
         };
       }),
+
+      // Uptime tracking actions
+      startUptimeTracking: async (labPath, nodeIds) => {
+        try {
+          const response = await api.uptime.start(labPath, nodeIds, get().activeTicket?.id);
+
+          if (!response.ok || !response.data) {
+            console.error('Failed to start uptime tracking:', response.error);
+            return;
+          }
+
+          const { session_id, started_at } = response.data;
+
+          // Create WebSocket connection
+          const ws = new UptimeWebSocket();
+          ws.onUpdate = (update) => get().updateUptimeStats(update);
+          ws.onError = (error) => console.error('Uptime WS error:', error);
+          ws.connect(session_id);
+
+          set({
+            uptime: {
+              sessionId: session_id,
+              isTracking: true,
+              startedAt: new Date(started_at).getTime(),
+              nodes: {},
+              totalUptimeSeconds: 0,
+              totalDowntimeSeconds: 0,
+              uptimePercentage: 100,
+              pointsEarned: 0,
+              totalIncidents: 0,
+            },
+            uptimeWs: ws,
+          });
+        } catch (error) {
+          console.error('Error starting uptime tracking:', error);
+        }
+      },
+
+      stopUptimeTracking: async () => {
+        const { uptime, uptimeWs } = get();
+
+        if (!uptime.sessionId) return null;
+
+        // Disconnect WebSocket
+        uptimeWs?.disconnect();
+
+        try {
+          const response = await api.uptime.stop(uptime.sessionId);
+
+          if (!response.ok || !response.data) {
+            console.error('Failed to stop uptime tracking:', response.error);
+            return null;
+          }
+
+          const { final_points, bonus_multiplier } = response.data;
+
+          // Reset uptime state
+          set({
+            uptime: {
+              sessionId: null,
+              isTracking: false,
+              startedAt: null,
+              nodes: {},
+              totalUptimeSeconds: 0,
+              totalDowntimeSeconds: 0,
+              uptimePercentage: 100,
+              pointsEarned: 0,
+              totalIncidents: 0,
+            },
+            uptimeWs: null,
+          });
+
+          return { points: final_points, bonus: bonus_multiplier };
+        } catch (error) {
+          console.error('Error stopping uptime tracking:', error);
+          return null;
+        }
+      },
+
+      updateUptimeStats: (update) => set((state) => {
+        // Convert server format to client format
+        const nodes: Record<number, NodeUptimeStats> = {};
+        for (const [id, stats] of Object.entries(update.nodes)) {
+          const nodeId = parseInt(id);
+          nodes[nodeId] = {
+            nodeId: stats.node_id,
+            nodeName: stats.node_name,
+            status: stats.status,
+            isResponsive: stats.is_responsive,
+            uptimeSeconds: stats.uptime_seconds,
+            downtimeSeconds: stats.downtime_seconds,
+            incidentCount: stats.incident_count,
+          };
+        }
+
+        return {
+          uptime: {
+            ...state.uptime,
+            nodes,
+            uptimePercentage: update.uptime_percentage,
+            pointsEarned: update.points_earned,
+            totalIncidents: Object.values(nodes).reduce((sum, n) => sum + n.incidentCount, 0),
+          },
+        };
+      }),
+
+      // Timer actions
+      startTicketTimer: () => {
+        const { activeTicket, gameConfig } = get();
+        if (!activeTicket?.startedAt) return;
+
+        // Clear existing timer
+        const existingInterval = get().ticketTimerInterval;
+        if (existingInterval) clearInterval(existingInterval);
+
+        // Only start if time limits are enforced
+        if (gameConfig && !gameConfig.enforceTimeLimits) return;
+
+        const interval = setInterval(() => get().tickTimer(), 1000);
+        set({ ticketTimerInterval: interval });
+      },
+
+      stopTicketTimer: () => {
+        const interval = get().ticketTimerInterval;
+        if (interval) {
+          clearInterval(interval);
+          set({ ticketTimerInterval: null, ticketTimeRemaining: null });
+        }
+      },
+
+      tickTimer: () => {
+        const { activeTicket } = get();
+        if (!activeTicket?.startedAt) return;
+
+        const elapsed = Date.now() - activeTicket.startedAt;
+        const totalMs = activeTicket.timeLimit * 60 * 1000;
+        const remaining = totalMs - elapsed;
+
+        if (remaining <= 0) {
+          get().stopTicketTimer();
+          get().failTicket();
+        } else {
+          set({ ticketTimeRemaining: remaining });
+        }
+      },
+
+      // Config actions
+      loadGameConfig: async () => {
+        try {
+          const response = await api.status.getConfig();
+          if (response.ok && response.data) {
+            set({ gameConfig: response.data });
+          }
+        } catch (error) {
+          console.error('Failed to load game config:', error);
+        }
+      },
 
       // Settings
       updateSettings: (newSettings) => set((state) => ({

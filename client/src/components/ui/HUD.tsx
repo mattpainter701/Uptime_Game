@@ -1,4 +1,6 @@
 import { useGameStore } from '../../store/gameStore';
+import { UptimeClockMini } from './UptimeClock';
+import { TicketTimerMini } from './TicketTimer';
 
 function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
   return (
@@ -16,7 +18,7 @@ function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
 }
 
 export function HUD() {
-  const { player, activeTicket, currentView, setView } = useGameStore();
+  const { player, activeTicket, currentView, setView, uptime, failTicket } = useGameStore();
 
   return (
     <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none">
@@ -119,11 +121,29 @@ export function HUD() {
             </div>
 
             <div className="flex items-center gap-4">
+              {/* Uptime stats */}
+              {uptime.isTracking && (
+                <UptimeClockMini
+                  isTracking={uptime.isTracking}
+                  startedAt={uptime.startedAt}
+                  uptimePercentage={uptime.uptimePercentage}
+                  pointsEarned={uptime.pointsEarned}
+                />
+              )}
+
+              {/* Time remaining */}
               <div className="text-center">
-                <div className="text-xs text-gray-400">Time Remaining</div>
-                <div className="text-xl font-mono text-orange-400">
-                  {activeTicket.timeLimit}:00
-                </div>
+                <div className="text-xs text-gray-400">Time</div>
+                {activeTicket.startedAt ? (
+                  <TicketTimerMini
+                    timeLimit={activeTicket.timeLimit}
+                    startedAt={activeTicket.startedAt}
+                  />
+                ) : (
+                  <div className="text-xl font-mono text-orange-400">
+                    {activeTicket.timeLimit}:00
+                  </div>
+                )}
               </div>
 
               <button
@@ -134,6 +154,7 @@ export function HUD() {
               </button>
 
               <button
+                onClick={failTicket}
                 className="px-4 py-2 bg-red-500/20 border border-red-500/50 rounded text-red-400 hover:bg-red-500/30 transition-all"
               >
                 Abandon

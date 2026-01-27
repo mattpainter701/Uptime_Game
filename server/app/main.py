@@ -14,7 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .services.eveng import eveng_client
-from .routes import labs, nodes, console, status
+from .services.uptime_tracker import uptime_tracker
+from .routes import labs, nodes, console, status, uptime
 
 # Configure logging
 logging.basicConfig(
@@ -45,6 +46,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down NetOps Tower Backend...")
+    await uptime_tracker.cleanup()
     await eveng_client.close()
 
 
@@ -70,6 +72,7 @@ app.include_router(status.router, prefix="/api")
 app.include_router(labs.router, prefix="/api")
 app.include_router(nodes.router, prefix="/api")
 app.include_router(console.router, prefix="/api")
+app.include_router(uptime.router, prefix="/api")
 
 
 @app.get("/")

@@ -4,6 +4,7 @@ NetOps Tower - Pydantic Schemas
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from enum import Enum
+from datetime import datetime
 
 
 # ============================================================================
@@ -109,6 +110,80 @@ class ConsoleMessage(BaseModel):
     cols: Optional[int] = None
     rows: Optional[int] = None
     message: Optional[str] = None
+
+
+# ============================================================================
+# Uptime Tracking Models
+# ============================================================================
+
+class NodeUptimeStats(BaseModel):
+    """Statistics for a single node's uptime."""
+    node_id: int
+    node_name: str
+    current_status: NodeStatus = NodeStatus.STOPPED
+    is_responsive: bool = False  # actual connectivity check result
+    uptime_seconds: int = 0
+    downtime_seconds: int = 0
+    last_status_change: datetime = Field(default_factory=datetime.now)
+    incident_count: int = 0  # number of down events
+
+
+class UptimeRecord(BaseModel):
+    """A single point-in-time record of node status."""
+    node_id: int
+    node_name: str
+    lab_path: str
+    status: NodeStatus
+    timestamp: datetime = Field(default_factory=datetime.now)
+    is_responsive: bool = False
+
+
+class UptimeSession(BaseModel):
+    """An active uptime tracking session for a ticket/lab."""
+    session_id: str
+    lab_path: str
+    started_at: datetime = Field(default_factory=datetime.now)
+    ended_at: Optional[datetime] = None
+    is_active: bool = True
+    nodes: Dict[int, NodeUptimeStats] = {}  # node_id -> stats
+    total_uptime_seconds: int = 0
+    total_downtime_seconds: int = 0
+    uptime_percentage: float = 100.0
+    points_earned: int = 0
+    total_incidents: int = 0
+
+
+class UptimeStartRequest(BaseModel):
+    """Request to start uptime tracking."""
+    lab_path: str
+    node_ids: List[int]
+    ticket_id: Optional[str] = None
+
+
+class UptimeStartResponse(BaseModel):
+    """Response when uptime tracking starts."""
+    session_id: str
+    lab_path: str
+    nodes: List[int]
+    started_at: datetime
+
+
+class UptimeStopResponse(BaseModel):
+    """Response when uptime tracking stops."""
+    session: UptimeSession
+    final_points: int
+    bonus_multiplier: float
+    summary: str
+
+
+class UptimeUpdate(BaseModel):
+    """Real-time uptime update pushed via WebSocket."""
+    session_id: str
+    timestamp: datetime = Field(default_factory=datetime.now)
+    nodes: Dict[int, NodeUptimeStats]
+    uptime_percentage: float
+    points_earned: int
+    session_duration_seconds: int
 
 
 # ============================================================================
