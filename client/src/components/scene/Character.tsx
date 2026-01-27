@@ -87,7 +87,9 @@ export function Character({
   ), []);
 
   const isSeated = pose === 'seated';
-  const bodyY = isSeated ? 0.48 : 0.85;
+  // When seated, PlayerController positions the group at Y=0.48, so bodyY should be 0
+  // When standing, Character needs to position itself at proper height
+  const bodyY = isSeated ? 0 : 0.85;
 
   return (
     <group ref={groupRef} position={position}>
@@ -116,29 +118,36 @@ export function Character({
 
         {/* === ARMS === */}
         {isSeated ? (
-          // Seated arms - reaching to keyboard
+          // Seated arms - reaching forward to keyboard
+          // Arms use absolute positions to ensure hands reach keyboard
           <>
             {[-1, 1].map((side, i) => (
-              <group key={i} position={[side * 0.22, 0.28, 0]}>
-                {/* Upper arm */}
-                <group rotation={[0.8, 0, side * -0.4]}>
-                  <mesh castShadow position={[0, -0.1, 0]}>
-                    <capsuleGeometry args={[0.045, 0.14, 8, 12]} />
-                    {shirtMaterial}
-                  </mesh>
-                  {/* Forearm */}
-                  <group position={[0, -0.22, 0]} rotation={[0.8, 0, 0]}>
-                    <mesh castShadow position={[0, -0.08, 0]}>
-                      <capsuleGeometry args={[0.04, 0.12, 8, 12]} />
-                      {shirtMaterial}
-                    </mesh>
-                    {/* Hand */}
-                    <mesh castShadow position={[0, -0.18, 0]}>
-                      <sphereGeometry args={[0.04, 12, 12]} />
-                      {skinMaterial}
-                    </mesh>
-                  </group>
-                </group>
+              <group key={i}>
+                {/* Upper arm - from shoulder going down and forward */}
+                <mesh castShadow position={[side * 0.18, 0.22, 0.08]} rotation={[0.5, 0, side * 0.3]}>
+                  <capsuleGeometry args={[0.045, 0.14, 8, 12]} />
+                  {shirtMaterial}
+                </mesh>
+                {/* Elbow */}
+                <mesh castShadow position={[side * 0.14, 0.08, 0.14]}>
+                  <sphereGeometry args={[0.04, 8, 8]} />
+                  {shirtMaterial}
+                </mesh>
+                {/* Forearm - extending forward toward keyboard */}
+                <mesh castShadow position={[side * 0.10, 0.02, 0.24]} rotation={[1.2, 0, side * -0.1]}>
+                  <capsuleGeometry args={[0.038, 0.14, 8, 12]} />
+                  {shirtMaterial}
+                </mesh>
+                {/* Wrist */}
+                <mesh castShadow position={[side * 0.08, -0.02, 0.34]}>
+                  <sphereGeometry args={[0.032, 8, 8]} />
+                  {skinMaterial}
+                </mesh>
+                {/* Hand - on keyboard */}
+                <mesh castShadow position={[side * 0.06, -0.04, 0.40]}>
+                  <boxGeometry args={[0.05, 0.025, 0.07]} />
+                  {skinMaterial}
+                </mesh>
               </group>
             ))}
           </>
@@ -184,25 +193,36 @@ export function Character({
 
         {/* === LEGS === */}
         {isSeated ? (
-          // Seated legs - bent
+          // Seated legs with feet on floor
+          // PlayerController positions group at Y=0.48, torsoRef at Y=0
+          // So torsoRef world Y = 0.48, floor at world Y = 0
+          // Floor relative to torsoRef = -0.48
           <>
-            {[-0.08, 0.08].map((x, i) => (
-              <group key={i} position={[x, -0.1, 0]}>
-                {/* Thigh - horizontal */}
-                <group rotation={[Math.PI / 2.2, 0, 0]}>
-                  <mesh castShadow position={[0, -0.12, 0]}>
-                    <capsuleGeometry args={[0.055, 0.18, 8, 12]} />
-                    {pantsMaterial}
-                  </mesh>
-                </group>
-                {/* Lower leg - vertical */}
-                <mesh castShadow position={[0, -0.35, 0.22]}>
-                  <capsuleGeometry args={[0.045, 0.2, 8, 12]} />
+            {[-0.07, 0.07].map((x, i) => (
+              <group key={i}>
+                {/* Thigh - horizontal, extending forward from hip */}
+                <mesh castShadow position={[x, -0.10, 0.12]} rotation={[Math.PI / 2, 0, 0]}>
+                  <capsuleGeometry args={[0.055, 0.18, 8, 12]} />
                   {pantsMaterial}
                 </mesh>
-                {/* Foot */}
-                <mesh castShadow position={[0, -0.52, 0.26]} rotation={[0.2, 0, 0]}>
-                  <boxGeometry args={[0.07, 0.04, 0.12]} />
+                {/* Knee - in front of body */}
+                <mesh castShadow position={[x, -0.10, 0.24]}>
+                  <sphereGeometry args={[0.052, 8, 8]} />
+                  {pantsMaterial}
+                </mesh>
+                {/* Lower leg - vertical from knee down to floor */}
+                <mesh castShadow position={[x, -0.30, 0.26]}>
+                  <capsuleGeometry args={[0.048, 0.32, 8, 12]} />
+                  {pantsMaterial}
+                </mesh>
+                {/* Ankle */}
+                <mesh castShadow position={[x, -0.50, 0.26]}>
+                  <sphereGeometry args={[0.04, 8, 8]} />
+                  {pantsMaterial}
+                </mesh>
+                {/* Foot - on floor */}
+                <mesh castShadow position={[x, -0.50, 0.33]}>
+                  <boxGeometry args={[0.08, 0.04, 0.14]} />
                   <meshStandardMaterial color={shoeColor} roughness={0.5} />
                 </mesh>
               </group>

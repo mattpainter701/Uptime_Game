@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState } from '../types/game';
+import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId } from '../types/game';
+import { ITEM_DEFINITIONS } from '../types/game';
 import { api } from '../services/api';
 import type { NodeUptimeStats as ServerNodeStats } from '../services/api';
 import { UptimeWebSocket, type UptimeUpdate } from '../services/websocket';
@@ -43,6 +44,13 @@ interface GameState {
   playerPosition: PlayerPosition;
   movement: MovementState;
 
+  // Building/Elevator state
+  currentFloor: 'basement' | 'lobby' | 'floor1' | 'floor2' | 'floor3';
+  elevatorOpen: boolean;
+
+  // Inventory
+  inventory: Record<ItemId, number>;
+
   // Actions
   setView: (view: GameView) => void;
   setActiveTicket: (ticket: Ticket | null) => void;
@@ -56,7 +64,7 @@ interface GameState {
   addReputation: (amount: number) => void;
 
   // Ticket actions
-  acceptTicket: (ticket: Ticket) => void;
+  acceptTicket: (ticket: Ticket) => boolean;
   completeTicket: () => void;
   failTicket: () => void;
   revealHint: (hintIndex: number) => void;
@@ -83,6 +91,18 @@ interface GameState {
   standUp: () => void;
   sitDown: () => void;
   toggleStand: () => void;
+
+  // Elevator actions
+  setCurrentFloor: (floor: 'basement' | 'lobby' | 'floor1' | 'floor2' | 'floor3') => void;
+  openElevator: () => void;
+  closeElevator: () => void;
+
+  // Inventory actions
+  collectItem: (itemId: ItemId, quantity?: number) => boolean;
+  useItem: (itemId: ItemId, quantity?: number) => boolean;
+  hasItem: (itemId: ItemId, quantity?: number) => boolean;
+  getItemCount: (itemId: ItemId) => number;
+  hasRequiredItems: (items: ItemId[]) => boolean;
 }
 
 // Sample tickets for demo
@@ -106,6 +126,7 @@ const SAMPLE_TICKETS: Ticket[] = [
       { type: 'ping', params: { source: 'PC1', destination: '10.0.1.1', successRate: 100 } },
     ],
     status: 'available',
+    requiredItems: ['laptop'],
   },
   {
     id: 'NET-002',
@@ -126,6 +147,7 @@ const SAMPLE_TICKETS: Ticket[] = [
       { type: 'command', params: { node: 'R1', command: 'show ip route', contains: ['0.0.0.0/0', '203.0.113.1'] } },
     ],
     status: 'available',
+    requiredItems: ['laptop', 'console-cable'],
   },
   {
     id: 'NET-003',
@@ -151,7 +173,7 @@ const SAMPLE_TICKETS: Ticket[] = [
   {
     id: 'NET-015',
     title: 'New PC Not on Correct VLAN',
-    description: 'A new workstation PC3 was connected to port Gi0/5 on SW1, but it cannot reach other devices in VLAN 20 (Engineering). The port is currently in VLAN 1 (default). Configure the switchport as an access port in VLAN 20.',
+    description: 'A new workstation PC3 was connected to port Gi0/5 on SW1, but it cannot reach other devices in VLAN 20 (Engineering). The port is currently in VLAN 1 (default). Configure the switchport as an access port in VLAN 20. You will need a patch cable to connect the new PC.',
     category: 'switching',
     difficulty: 2,
     timeLimit: 12,
@@ -167,6 +189,8 @@ const SAMPLE_TICKETS: Ticket[] = [
       { type: 'command', params: { node: 'SW1', command: 'show vlan brief', contains: ['Gi0/5', '20'] } },
     ],
     status: 'available',
+    requiredItems: ['laptop', 'console-cable', 'patch-cable'],
+    consumeItems: ['patch-cable'],
   },
   {
     id: 'NET-018',
@@ -423,6 +447,21 @@ export const useGameStore = create<GameState>()(
         right: false,
       },
 
+      // Building/Elevator state
+      currentFloor: 'basement',
+      elevatorOpen: false,
+
+      // Inventory - start with empty, collect from office
+      inventory: {
+        'laptop': 0,
+        'console-cable': 0,
+        'patch-cable': 0,
+        'fiber-module': 0,
+        'ssd': 0,
+        'usb-drive': 0,
+        'crimping-tool': 0,
+      },
+
       // View actions
       setView: (view) => set({ currentView: view }),
 
@@ -460,6 +499,15 @@ export const useGameStore = create<GameState>()(
 
       // Ticket actions
       acceptTicket: (ticket) => {
+        // Check if player has required items
+        if (ticket.requiredItems && ticket.requiredItems.length > 0) {
+          const hasAllItems = get().hasRequiredItems(ticket.requiredItems);
+          if (!hasAllItems) {
+            console.warn('Cannot accept ticket: missing required items');
+            return false;
+          }
+        }
+
         set((state) => ({
           activeTicket: { ...ticket, status: 'active', startedAt: Date.now() },
           availableTickets: state.availableTickets.filter(t => t.id !== ticket.id),
@@ -471,6 +519,7 @@ export const useGameStore = create<GameState>()(
 
         // Note: Uptime tracking should be started when lab nodes are available
         // This would typically happen after lab is loaded
+        return true;
       },
 
       completeTicket: async () => {
@@ -479,6 +528,13 @@ export const useGameStore = create<GameState>()(
 
         // Stop timer
         get().stopTicketTimer();
+
+        // Consume items that should be used when completing this ticket
+        if (activeTicket.consumeItems && activeTicket.consumeItems.length > 0) {
+          for (const itemId of activeTicket.consumeItems) {
+            get().useItem(itemId);
+          }
+        }
 
         // Stop uptime tracking and get final stats
         let uptimeBonus = 1.0;
@@ -758,12 +814,62 @@ export const useGameStore = create<GameState>()(
           get().sitDown();
         }
       },
+
+      // Elevator actions
+      setCurrentFloor: (floor) => set({ currentFloor: floor, elevatorOpen: false }),
+      openElevator: () => set({ elevatorOpen: true }),
+      closeElevator: () => set({ elevatorOpen: false }),
+
+      // Inventory actions
+      collectItem: (itemId, quantity = 1) => {
+        const current = get().inventory[itemId] || 0;
+        const itemDef = ITEM_DEFINITIONS[itemId];
+        const maxStack = itemDef?.maxStack || 1;
+
+        // Check if we can collect more
+        if (current >= maxStack) return false;
+
+        const newQuantity = Math.min(current + quantity, maxStack);
+        set((state) => ({
+          inventory: { ...state.inventory, [itemId]: newQuantity }
+        }));
+        return true;
+      },
+
+      useItem: (itemId, quantity = 1) => {
+        const current = get().inventory[itemId] || 0;
+        if (current < quantity) return false;
+
+        const itemDef = ITEM_DEFINITIONS[itemId];
+
+        // Only reduce quantity for consumable items
+        if (itemDef?.consumable) {
+          set((state) => ({
+            inventory: { ...state.inventory, [itemId]: current - quantity }
+          }));
+        }
+        return true;
+      },
+
+      hasItem: (itemId, quantity = 1) => {
+        return (get().inventory[itemId] || 0) >= quantity;
+      },
+
+      getItemCount: (itemId) => {
+        return get().inventory[itemId] || 0;
+      },
+
+      hasRequiredItems: (items) => {
+        const inventory = get().inventory;
+        return items.every(itemId => (inventory[itemId] || 0) > 0);
+      },
     }),
     {
       name: 'netops-tower-save',
       partialize: (state) => ({
         player: state.player,
         settings: state.settings,
+        inventory: state.inventory,
       }),
     }
   )

@@ -11,7 +11,9 @@ const GRAVITY = 18;
 
 // Sit zone - matches the purple ring on the floor
 const SIT_ZONE = { x: 0, z: -1.5, radius: 1.4 };
-const CHAIR_POSITION = { x: 0, z: -1 };
+const CHAIR_POSITION = { x: 0, z: -1.15 };
+// Desk interaction zone
+const DESK_ZONE = { minX: -2, maxX: 2, minZ: -3, maxZ: 0.5 };
 
 interface PlayerControllerProps {
   children?: React.ReactNode;
@@ -24,12 +26,30 @@ export function PlayerController({ children }: PlayerControllerProps) {
   const setPlayerPosition = useGameStore((state) => state.setPlayerPosition);
   const setMovement = useGameStore((state) => state.setMovement);
   const toggleStand = useGameStore((state) => state.toggleStand);
+  const setView = useGameStore((state) => state.setView);
   const pose = useGameStore((state) => state.playerPosition.pose);
   const currentView = useGameStore((state) => state.currentView);
+  const currentFloor = useGameStore((state) => state.currentFloor);
+
+  // Floor boundaries - different floors have different sizes
+  const getFloorBounds = () => {
+    switch (currentFloor) {
+      case 'floor3': // Datacenter is larger
+        return { minX: -11, maxX: 11, minZ: -9, maxZ: 9 };
+      case 'floor1':
+      case 'floor2': // Cubicle floors
+        return { minX: -9, maxX: 9, minZ: -9, maxZ: 9 };
+      case 'lobby':
+        return { minX: -6, maxX: 6, minZ: -4, maxZ: 6 };
+      default: // basement/office
+        return { minX: -4, maxX: 4, minZ: -4, maxZ: 4 };
+    }
+  };
 
   // All physics/position in refs for smooth updates
   // rotation: 0 = facing +Z, PI = facing -Z (toward monitors)
-  const posRef = useRef({ x: 0, y: 0, z: -1, rotation: Math.PI });
+  // y: character model's feet are ~0.75 below the group position, so start at 0.75
+  const posRef = useRef({ x: 0, y: 0.75, z: -1, rotation: Math.PI });
   const velocityY = useRef(0);
   const isJumping = useRef(false);
   const movementRef = useRef({ forward: false, backward: false, left: false, right: false });
@@ -88,8 +108,20 @@ export function PlayerController({ children }: PlayerControllerProps) {
           }
         }
         break;
+      case 'KeyF':
+        // Use computer when near desk (seated or standing)
+        if (currentFloor === 'basement') {
+          const { x, z } = posRef.current;
+          const isNearDesk = pose === 'seated' ||
+            (x >= DESK_ZONE.minX && x <= DESK_ZONE.maxX &&
+             z >= DESK_ZONE.minZ && z <= DESK_ZONE.maxZ);
+          if (isNearDesk) {
+            setView('terminal');
+          }
+        }
+        break;
     }
-  }, [currentView, pose, setMovement, toggleStand]);
+  }, [currentView, pose, setMovement, toggleStand, setView, currentFloor]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     switch (e.code) {
@@ -133,10 +165,12 @@ export function PlayerController({ children }: PlayerControllerProps) {
     if (!groupRef.current) return;
 
     // Seated: sit at chair facing monitors (-Z direction, rotation = PI)
+    // Seated y position is lower since character bends legs
     if (pose === 'seated') {
-      groupRef.current.position.set(CHAIR_POSITION.x, 0, CHAIR_POSITION.z);
+      const SEATED_Y = 0.48;
+      groupRef.current.position.set(CHAIR_POSITION.x, SEATED_Y, CHAIR_POSITION.z);
       groupRef.current.rotation.y = Math.PI; // Face -Z (monitors)
-      posRef.current = { x: CHAIR_POSITION.x, y: 0, z: CHAIR_POSITION.z, rotation: Math.PI };
+      posRef.current = { x: CHAIR_POSITION.x, y: SEATED_Y, z: CHAIR_POSITION.z, rotation: Math.PI };
 
       // Camera for seated view
       camera.position.lerp(new THREE.Vector3(0, 2.5, 3), 3 * delta);
@@ -149,10 +183,12 @@ export function PlayerController({ children }: PlayerControllerProps) {
     let isMoving = false;
 
     // Gravity & jumping
+    // Floor level is 0.75 to account for character model height
+    const FLOOR_LEVEL = 0.75;
     velocityY.current -= GRAVITY * delta;
     y += velocityY.current * delta;
-    if (y <= 0) {
-      y = 0;
+    if (y <= FLOOR_LEVEL) {
+      y = FLOOR_LEVEL;
       velocityY.current = 0;
       isJumping.current = false;
     }
@@ -177,9 +213,10 @@ export function PlayerController({ children }: PlayerControllerProps) {
       isMoving = true;
     }
 
-    // Boundary checks
-    x = Math.max(-4, Math.min(4, x));
-    z = Math.max(-4, Math.min(4, z));
+    // Boundary checks based on current floor
+    const bounds = getFloorBounds();
+    x = Math.max(bounds.minX, Math.min(bounds.maxX, x));
+    z = Math.max(bounds.minZ, Math.min(bounds.maxZ, z));
 
     posRef.current = { x, y, z, rotation };
 

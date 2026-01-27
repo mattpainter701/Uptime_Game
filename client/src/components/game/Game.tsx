@@ -3,6 +3,8 @@ import { GameCanvas } from '../scene/GameCanvas';
 import { HUD } from '../ui/HUD';
 import { TicketPanel } from '../ui/TicketPanel';
 import { TerminalView } from '../terminal/TerminalView';
+import { ElevatorPanel } from '../ui/ElevatorPanel';
+import { FLOORS } from '../scene/Building';
 
 function OfficeView() {
   return (
@@ -214,6 +216,10 @@ function ShopPanel() {
 
 export function Game() {
   const currentView = useGameStore((state) => state.currentView);
+  const elevatorOpen = useGameStore((state) => state.elevatorOpen);
+  const currentFloor = useGameStore((state) => state.currentFloor);
+  const setCurrentFloor = useGameStore((state) => state.setCurrentFloor);
+  const closeElevator = useGameStore((state) => state.closeElevator);
 
   return (
     <div className="w-full h-full relative">
@@ -225,6 +231,15 @@ export function Game() {
       {currentView === 'tickets' && <TicketPanel />}
       {currentView === 'shop' && <ShopPanel />}
       {currentView === 'settings' && <SettingsPanel />}
+
+      {/* Elevator panel overlay */}
+      <ElevatorPanel
+        isOpen={elevatorOpen}
+        currentFloor={currentFloor}
+        floors={FLOORS}
+        onSelectFloor={setCurrentFloor}
+        onClose={closeElevator}
+      />
     </div>
   );
 }

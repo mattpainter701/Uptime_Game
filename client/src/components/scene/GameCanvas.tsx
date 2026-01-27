@@ -2,7 +2,7 @@ import { Suspense, useRef, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
-import { Office } from './Office';
+import { Building } from './Building';
 import { Lighting } from './Lighting';
 import { useGameStore } from '../../store/gameStore';
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib';
@@ -37,9 +37,9 @@ function Scene() {
         />
       )}
 
-      {/* Main office scene */}
+      {/* Main building scene */}
       <Suspense fallback={<LoadingFallback />}>
-        <Office />
+        <Building />
       </Suspense>
 
       {/* Post-processing effects */}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import type { Ticket, TicketCategory } from '../../types/game';
+import { ITEM_DEFINITIONS } from '../../types/game';
 
 const CATEGORY_INFO: Record<TicketCategory, { icon: string; color: string; label: string }> = {
   'network-basics': { icon: '🌐', color: 'text-blue-400', label: 'Network Basics' },
@@ -29,7 +30,13 @@ function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
 
 function TicketCard({ ticket, onAccept }: { ticket: Ticket; onAccept: () => void }) {
   const [expanded, setExpanded] = useState(false);
+  const hasRequiredItems = useGameStore((state) => state.hasRequiredItems);
+  const hasItem = useGameStore((state) => state.hasItem);
   const category = CATEGORY_INFO[ticket.category];
+
+  const requiredItems = ticket.requiredItems || [];
+  const consumeItems = ticket.consumeItems || [];
+  const canAccept = requiredItems.length === 0 || hasRequiredItems(requiredItems);
 
   return (
     <div className="glass-panel p-4 hover:border-cyan-500/50 transition-all cursor-pointer">
@@ -55,12 +62,77 @@ function TicketCard({ ticket, onAccept }: { ticket: Ticket; onAccept: () => void
           <span className="text-cyan-400">📊 +{ticket.rewardXp} XP</span>
           <span className="text-orange-400">⏱️ {ticket.timeLimit} min</span>
         </div>
+
+        {/* Required items preview (when collapsed) */}
+        {requiredItems.length > 0 && !expanded && (
+          <div className="mt-2 flex items-center gap-1">
+            <span className="text-xs text-gray-500">Requires:</span>
+            {requiredItems.map((itemId) => {
+              const item = ITEM_DEFINITIONS[itemId];
+              const owned = hasItem(itemId);
+              return (
+                <span
+                  key={itemId}
+                  className={owned ? 'opacity-100' : 'opacity-40'}
+                  title={`${item.name}${owned ? ' (owned)' : ' (missing)'}`}
+                >
+                  {item.icon}
+                </span>
+              );
+            })}
+            {!canAccept && (
+              <span className="text-xs text-red-400 ml-1">Missing items</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Expanded details */}
       {expanded && (
         <div className="mt-4 pt-4 border-t border-gray-700">
           <p className="text-gray-300 text-sm mb-4">{ticket.description}</p>
+
+          {/* Required items section */}
+          {requiredItems.length > 0 && (
+            <div className="mb-4 p-3 bg-gray-800/50 rounded">
+              <div className="text-xs text-gray-400 mb-2">Required Equipment:</div>
+              <div className="flex flex-wrap gap-2">
+                {requiredItems.map((itemId) => {
+                  const item = ITEM_DEFINITIONS[itemId];
+                  const owned = hasItem(itemId);
+                  const isConsumed = consumeItems.includes(itemId);
+                  return (
+                    <div
+                      key={itemId}
+                      className={`flex items-center gap-1 px-2 py-1 rounded text-sm ${
+                        owned
+                          ? 'bg-green-500/20 border border-green-500/50 text-green-400'
+                          : 'bg-red-500/20 border border-red-500/50 text-red-400'
+                      }`}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.name}</span>
+                      {owned ? (
+                        <span className="text-xs">✓</span>
+                      ) : (
+                        <span className="text-xs">✗</span>
+                      )}
+                      {isConsumed && (
+                        <span className="text-xs text-orange-400 ml-1" title="Will be consumed">
+                          (consumed)
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {!canAccept && (
+                <div className="mt-2 text-xs text-red-400">
+                  Visit the supply table in your office to collect missing equipment.
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center justify-between">
             <div className="text-xs text-gray-400">
@@ -69,11 +141,18 @@ function TicketCard({ ticket, onAccept }: { ticket: Ticket; onAccept: () => void
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onAccept();
+                if (canAccept) {
+                  onAccept();
+                }
               }}
-              className="px-4 py-2 bg-green-500/30 border border-green-500 rounded text-green-400 hover:bg-green-500/50 transition-all font-bold"
+              disabled={!canAccept}
+              className={`px-4 py-2 rounded font-bold transition-all ${
+                canAccept
+                  ? 'bg-green-500/30 border border-green-500 text-green-400 hover:bg-green-500/50'
+                  : 'bg-gray-500/20 border border-gray-500 text-gray-500 cursor-not-allowed'
+              }`}
             >
-              Accept Ticket
+              {canAccept ? 'Accept Ticket' : 'Missing Equipment'}
             </button>
           </div>
         </div>

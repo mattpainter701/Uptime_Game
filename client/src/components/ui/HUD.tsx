@@ -1,6 +1,7 @@
 import { useGameStore } from '../../store/gameStore';
 import { UptimeClockMini } from './UptimeClock';
 import { TicketTimerMini } from './TicketTimer';
+import { InventoryMini } from './InventoryPanel';
 
 function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
   return (
@@ -17,8 +18,16 @@ function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
   );
 }
 
+const FLOOR_DISPLAY_NAMES: Record<string, string> = {
+  'basement': 'B',
+  'lobby': 'L',
+  'floor1': '1',
+  'floor2': '2',
+  'floor3': '3',
+};
+
 export function HUD() {
-  const { player, activeTicket, currentView, setView, uptime, failTicket, playerPosition } = useGameStore();
+  const { player, activeTicket, currentView, setView, uptime, failTicket, playerPosition, currentFloor } = useGameStore();
 
   return (
     <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none">
@@ -45,7 +54,7 @@ export function HUD() {
 
           <div className="text-center">
             <div className="text-xs text-gray-400">Floor</div>
-            <div className="text-lg font-bold text-purple-400">{player.floor}</div>
+            <div className="text-lg font-bold text-purple-400">{FLOOR_DISPLAY_NAMES[currentFloor] || currentFloor}</div>
           </div>
         </div>
 
@@ -105,6 +114,17 @@ export function HUD() {
                 <span className="font-bold text-cyan-400">{player.xp}</span>
                 <span className="text-gray-500"> / {player.xp + player.xpToNextLevel}</span>
               </div>
+            </div>
+          </div>
+
+          <div className="w-px h-8 bg-gray-600" />
+
+          {/* Inventory */}
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🎒</span>
+            <div>
+              <div className="text-xs text-gray-400">Equipment</div>
+              <InventoryMini />
             </div>
           </div>
         </div>
@@ -200,10 +220,21 @@ export function HUD() {
           <div className="glass-panel px-4 py-2 text-center">
             <div className="flex items-center gap-4 text-sm">
               {playerPosition.pose === 'seated' ? (
-                <span className="text-gray-400">
-                  <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">SPACE</kbd>
-                  <span className="ml-2">Stand Up</span>
-                </span>
+                <>
+                  <span className="text-gray-400">
+                    <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">SPACE</kbd>
+                    <span className="ml-2">Stand Up</span>
+                  </span>
+                  {currentFloor === 'basement' && (
+                    <>
+                      <span className="text-gray-500">|</span>
+                      <span className="text-gray-400">
+                        <kbd className="px-2 py-1 bg-cyan-600 rounded text-white font-mono animate-pulse">F</kbd>
+                        <span className="ml-2 text-cyan-400">Use Computer</span>
+                      </span>
+                    </>
+                  )}
+                </>
               ) : (
                 <>
                   <span className="text-gray-400">
@@ -225,6 +256,18 @@ export function HUD() {
                     <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">E</kbd>
                     <span className="ml-2">Sit</span>
                   </span>
+                  {/* Show F key hint when near desk in basement */}
+                  {currentFloor === 'basement' &&
+                   playerPosition.x >= -2 && playerPosition.x <= 2 &&
+                   playerPosition.z >= -3 && playerPosition.z <= 0.5 && (
+                    <>
+                      <span className="text-gray-500">|</span>
+                      <span className="text-gray-400">
+                        <kbd className="px-2 py-1 bg-cyan-600 rounded text-white font-mono animate-pulse">F</kbd>
+                        <span className="ml-2 text-cyan-400">Use Computer</span>
+                      </span>
+                    </>
+                  )}
                 </>
               )}
             </div>
