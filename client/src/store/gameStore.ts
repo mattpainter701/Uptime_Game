@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState } from '../types/game';
-import { api, type UptimeUpdate } from '../services/api';
-import { UptimeWebSocket } from '../services/websocket';
+import { api } from '../services/api';
+import type { NodeUptimeStats as ServerNodeStats } from '../services/api';
+import { UptimeWebSocket, type UptimeUpdate } from '../services/websocket';
 
 interface GameState {
   // Player state
@@ -474,7 +475,7 @@ export const useGameStore = create<GameState>()(
       updateUptimeStats: (update) => set((state) => {
         // Convert server format to client format
         const nodes: Record<number, NodeUptimeStats> = {};
-        for (const [id, stats] of Object.entries(update.nodes)) {
+        for (const [id, stats] of Object.entries(update.nodes) as [string, ServerNodeStats][]) {
           const nodeId = parseInt(id);
           nodes[nodeId] = {
             nodeId: stats.node_id,
@@ -572,7 +573,7 @@ export const useGameStore = create<GameState>()(
         }
       })),
 
-      sitDown: () => set((state) => ({
+      sitDown: () => set(() => ({
         playerPosition: {
           x: 0,
           y: 0,

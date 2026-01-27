@@ -199,16 +199,31 @@ export function HUD() {
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto">
           <div className="glass-panel px-4 py-2 text-center">
             <div className="flex items-center gap-4 text-sm">
-              <span className="text-gray-400">
-                <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">SPACE</kbd>
-                <span className="ml-2">{playerPosition.pose === 'seated' ? 'Stand Up' : 'Sit Down'}</span>
-              </span>
-              {playerPosition.pose !== 'seated' && (
+              {playerPosition.pose === 'seated' ? (
+                <span className="text-gray-400">
+                  <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">SPACE</kbd>
+                  <span className="ml-2">Stand Up</span>
+                </span>
+              ) : (
                 <>
-                  <span className="text-gray-500">|</span>
                   <span className="text-gray-400">
                     <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">WASD</kbd>
                     <span className="ml-2">Move</span>
+                  </span>
+                  <span className="text-gray-500">|</span>
+                  <span className="text-gray-400">
+                    <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">SHIFT</kbd>
+                    <span className="ml-2">Run</span>
+                  </span>
+                  <span className="text-gray-500">|</span>
+                  <span className="text-gray-400">
+                    <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">SPACE</kbd>
+                    <span className="ml-2">Jump</span>
+                  </span>
+                  <span className="text-gray-500">|</span>
+                  <span className="text-gray-400">
+                    <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">E</kbd>
+                    <span className="ml-2">Sit</span>
                   </span>
                 </>
               )}

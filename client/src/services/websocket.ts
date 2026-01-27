@@ -22,13 +22,13 @@ export interface ConsoleMessage {
 }
 
 export class ConsoleWebSocket {
-  private ws: WebSocket | null = null;
-  private terminal: Terminal | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 3;
-  private reconnectDelay = 2000;
-  private labPath: string = '';
-  private nodeId: number = 0;
+  protected ws: WebSocket | null = null;
+  protected terminal: Terminal | null = null;
+  protected reconnectAttempts = 0;
+  protected maxReconnectAttempts = 3;
+  protected reconnectDelay = 2000;
+  protected labPath: string = '';
+  protected nodeId: number = 0;
 
   onConnect?: (message: ConsoleMessage) => void;
   onDisconnect?: () => void;

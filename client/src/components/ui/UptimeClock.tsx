@@ -18,7 +18,7 @@ interface UptimeClockProps {
 }
 
 export function UptimeClock({
-  sessionId,
+  sessionId: _sessionId,
   isTracking,
   startedAt,
   nodes,
