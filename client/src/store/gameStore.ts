@@ -244,7 +244,7 @@ export const useGameStore = create<GameState>()(
       playerPosition: {
         x: 0,
         y: 0,
-        z: 0.8, // In front of desk
+        z: -1, // At chair position
         rotation: 0,
         pose: 'seated',
         isMoving: false,
@@ -577,7 +577,7 @@ export const useGameStore = create<GameState>()(
         playerPosition: {
           x: 0,
           y: 0,
-          z: 0.8,
+          z: -1, // Chair position
           rotation: 0,
           pose: 'seated',
           isMoving: false,

@@ -6,9 +6,13 @@ import { useGameStore } from '../../store/gameStore';
 const WALK_SPEED = 2.5;
 const RUN_SPEED = 5.0;
 const ROTATION_SPEED = 3;
-const JUMP_FORCE = 5;
-const GRAVITY = 15;
-const DESK_POSITION = { x: 0, z: 0.8 }; // Chair position
+const JUMP_FORCE = 6;
+const GRAVITY = 18;
+
+// Sit zone - matches the purple ring on the floor (carpet RGB edge)
+// Ring is at z=-1.5 with radius ~1.4
+const SIT_ZONE = { x: 0, z: -1.5, radius: 1.4 };
+const CHAIR_POSITION = { x: 0, z: -1 }; // Where player sits
 
 interface PlayerControllerProps {
   children?: React.ReactNode;
@@ -25,10 +29,10 @@ export function PlayerController({ children }: PlayerControllerProps) {
   const toggleStand = useGameStore((state) => state.toggleStand);
   const currentView = useGameStore((state) => state.currentView);
 
-  // Local state for running and jumping
+  // Use refs for physics values (better for useFrame than useState)
+  const velocityY = useRef(0);
+  const isJumping = useRef(false);
   const [isRunning, setIsRunning] = useState(false);
-  const [velocityY, setVelocityY] = useState(0);
-  const [isJumping, setIsJumping] = useState(false);
 
   // Handle keyboard input
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -61,25 +65,25 @@ export function PlayerController({ children }: PlayerControllerProps) {
         // Jump if standing, otherwise stand up
         if (playerPosition.pose === 'seated') {
           toggleStand();
-        } else if (!isJumping) {
-          setVelocityY(JUMP_FORCE);
-          setIsJumping(true);
+        } else if (!isJumping.current) {
+          velocityY.current = JUMP_FORCE;
+          isJumping.current = true;
         }
         break;
       case 'KeyE':
-        // E to sit back down at desk
+        // E to sit back down at desk - only works inside purple circle
         if (playerPosition.pose !== 'seated') {
-          const distToDesk = Math.sqrt(
-            Math.pow(playerPosition.x - DESK_POSITION.x, 2) +
-            Math.pow(playerPosition.z - DESK_POSITION.z, 2)
+          const distToSitZone = Math.sqrt(
+            Math.pow(playerPosition.x - SIT_ZONE.x, 2) +
+            Math.pow(playerPosition.z - SIT_ZONE.z, 2)
           );
-          if (distToDesk < 1.5) {
+          if (distToSitZone <= SIT_ZONE.radius) {
             toggleStand(); // Sit down
           }
         }
         break;
     }
-  }, [currentView, setMovement, toggleStand, playerPosition, isJumping]);
+  }, [currentView, setMovement, toggleStand, playerPosition.pose]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     switch (e.code) {
@@ -122,9 +126,9 @@ export function PlayerController({ children }: PlayerControllerProps) {
 
     // Only allow movement when standing
     if (playerPosition.pose !== 'standing' && playerPosition.pose !== 'walking') {
-      // Keep character at desk when seated (facing the monitors - rotated 180 degrees)
-      groupRef.current.position.set(DESK_POSITION.x, 0, DESK_POSITION.z);
-      groupRef.current.rotation.y = Math.PI; // Face the desk/monitors
+      // Keep character at chair when seated (facing the monitors/desk at -Z)
+      groupRef.current.position.set(CHAIR_POSITION.x, 0, CHAIR_POSITION.z);
+      groupRef.current.rotation.y = Math.PI; // Face -Z direction (toward monitors)
       return;
     }
 
@@ -132,18 +136,15 @@ export function PlayerController({ children }: PlayerControllerProps) {
     let isMoving = false;
 
     // Apply gravity and jumping
-    let newVelocityY = velocityY - GRAVITY * delta;
-    y += velocityY * delta;
+    velocityY.current -= GRAVITY * delta;
+    y += velocityY.current * delta;
 
     // Ground check
     if (y <= 0) {
       y = 0;
-      newVelocityY = 0;
-      if (isJumping) {
-        setIsJumping(false);
-      }
+      velocityY.current = 0;
+      isJumping.current = false;
     }
-    setVelocityY(newVelocityY);
 
     // Rotation (turning)
     if (movement.left) {
@@ -184,8 +185,10 @@ export function PlayerController({ children }: PlayerControllerProps) {
     });
 
     // Update 3D group
+    // Add Math.PI to rotation so character faces movement direction
+    // (character model faces +Z, but forward movement is -Z)
     groupRef.current.position.set(x, y, z);
-    groupRef.current.rotation.y = rotation;
+    groupRef.current.rotation.y = rotation + Math.PI;
 
     // Update camera to follow player (third-person)
     const cameraOffset = new THREE.Vector3(0, 2.5, 4);
