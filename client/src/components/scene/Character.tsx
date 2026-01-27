@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { PlayerPose } from '../../types/game';
@@ -9,7 +9,7 @@ interface CharacterProps {
   isMoving?: boolean;
 }
 
-// Low-poly office geek character with seated/standing/walking poses
+// Stylized office worker character with smooth shapes
 export function Character({
   position = [0, 0, 0],
   pose = 'seated',
@@ -21,6 +21,7 @@ export function Character({
   const rightLegRef = useRef<THREE.Group>(null);
   const leftArmRef = useRef<THREE.Group>(null);
   const rightArmRef = useRef<THREE.Group>(null);
+  const torsoRef = useRef<THREE.Group>(null);
 
   // Animation
   useFrame((state) => {
@@ -29,139 +30,180 @@ export function Character({
     // Head animation
     if (headRef.current) {
       if (pose === 'seated') {
-        // Slight head bob and look around while working
         headRef.current.rotation.y = Math.sin(time * 0.5) * 0.1;
         headRef.current.rotation.x = Math.sin(time * 0.3) * 0.05 - 0.1;
       } else {
-        // Look ahead while walking
         headRef.current.rotation.y = 0;
-        headRef.current.rotation.x = isMoving ? -0.1 : 0;
+        headRef.current.rotation.x = isMoving ? -0.05 : 0;
       }
     }
 
     // Walking animation
     if (isMoving && pose === 'walking') {
-      const walkSpeed = 8;
-      const legSwing = Math.sin(time * walkSpeed) * 0.5;
-      const armSwing = Math.sin(time * walkSpeed) * 0.3;
+      const walkSpeed = 10;
+      const legSwing = Math.sin(time * walkSpeed) * 0.6;
+      const armSwing = Math.sin(time * walkSpeed) * 0.4;
+      const bodyBob = Math.abs(Math.sin(time * walkSpeed)) * 0.02;
 
-      if (leftLegRef.current) {
-        leftLegRef.current.rotation.x = legSwing;
-      }
-      if (rightLegRef.current) {
-        rightLegRef.current.rotation.x = -legSwing;
-      }
-      if (leftArmRef.current) {
-        leftArmRef.current.rotation.x = -armSwing;
-      }
-      if (rightArmRef.current) {
-        rightArmRef.current.rotation.x = armSwing;
-      }
+      if (leftLegRef.current) leftLegRef.current.rotation.x = legSwing;
+      if (rightLegRef.current) rightLegRef.current.rotation.x = -legSwing;
+      if (leftArmRef.current) leftArmRef.current.rotation.x = -armSwing;
+      if (rightArmRef.current) rightArmRef.current.rotation.x = armSwing;
+      if (torsoRef.current) torsoRef.current.position.y = bodyBob;
     } else if (pose !== 'seated') {
-      // Reset to standing pose
       if (leftLegRef.current) leftLegRef.current.rotation.x = 0;
       if (rightLegRef.current) rightLegRef.current.rotation.x = 0;
       if (leftArmRef.current) leftArmRef.current.rotation.x = 0;
       if (rightArmRef.current) rightArmRef.current.rotation.x = 0;
+      if (torsoRef.current) torsoRef.current.position.y = 0;
     }
 
     // Subtle breathing
     if (groupRef.current) {
-      const breathe = Math.sin(time * 2) * 0.005;
+      const breathe = Math.sin(time * 1.5) * 0.003;
       groupRef.current.position.y = position[1] + breathe;
     }
   });
 
-  const skinColor = '#e8beac';
-  const hairColor = '#2a1a0a';
-  const shirtColor = '#1a3a5c';
-  const pantsColor = '#2d2d3a';
-  const glassesColor = '#1a1a1a';
+  // Colors - more vibrant and stylized
+  const skinColor = '#f5d0c5';
+  const skinColorDark = '#e8b8a8';
+  const hairColor = '#3d2314';
+  const shirtColor = '#2563eb'; // Nice blue
+  const pantsColor = '#374151';
+  const shoeColor = '#f5f5f5';
 
-  // Different body configurations based on pose
+  // Shared materials for better performance
+  const skinMaterial = useMemo(() => (
+    <meshStandardMaterial color={skinColor} roughness={0.6} />
+  ), []);
+
+  const shirtMaterial = useMemo(() => (
+    <meshStandardMaterial color={shirtColor} roughness={0.7} />
+  ), []);
+
+  const pantsMaterial = useMemo(() => (
+    <meshStandardMaterial color={pantsColor} roughness={0.8} />
+  ), []);
+
   const isSeated = pose === 'seated';
-  const bodyY = isSeated ? 0.5 : 0.9;
+  const bodyY = isSeated ? 0.48 : 0.85;
 
   return (
     <group ref={groupRef} position={position}>
-      {/* Body */}
-      <group position={[0, bodyY, 0]}>
-        {/* Torso */}
-        <mesh position={[0, 0.35, 0]} castShadow>
-          <boxGeometry args={[0.35, 0.4, 0.2]} />
-          <meshStandardMaterial color={shirtColor} roughness={0.8} />
-        </mesh>
+      <group ref={torsoRef} position={[0, bodyY, 0]}>
 
-        {/* Shirt collar */}
-        <mesh position={[0, 0.52, 0.08]}>
-          <boxGeometry args={[0.15, 0.08, 0.08]} />
-          <meshStandardMaterial color="#f0f0f0" roughness={0.6} />
-        </mesh>
+        {/* === TORSO === */}
+        <group position={[0, 0.22, 0]}>
+          {/* Main torso - rounded box shape */}
+          <mesh castShadow position={[0, 0, 0]}>
+            <capsuleGeometry args={[0.14, 0.22, 8, 16]} />
+            {shirtMaterial}
+          </mesh>
 
-        {/* Arms */}
+          {/* Shoulders */}
+          <mesh castShadow position={[0, 0.12, 0]} rotation={[0, 0, Math.PI / 2]}>
+            <capsuleGeometry args={[0.06, 0.28, 8, 12]} />
+            {shirtMaterial}
+          </mesh>
+
+          {/* Collar / neck area */}
+          <mesh position={[0, 0.22, 0]}>
+            <cylinderGeometry args={[0.06, 0.08, 0.08, 12]} />
+            <meshStandardMaterial color={skinColorDark} roughness={0.6} />
+          </mesh>
+        </group>
+
+        {/* === ARMS === */}
         {isSeated ? (
-          // Seated arms - reaching forward to keyboard
+          // Seated arms - reaching to keyboard
           <>
-            {[-0.22, 0.22].map((x, i) => (
-              <group key={i} position={[x, 0.35, 0]}>
-                <mesh position={[0, -0.05, 0.08]} rotation={[0.5, 0, x > 0 ? -0.3 : 0.3]} castShadow>
-                  <boxGeometry args={[0.1, 0.22, 0.1]} />
-                  <meshStandardMaterial color={shirtColor} roughness={0.8} />
-                </mesh>
-                <mesh position={[x > 0 ? 0.08 : -0.08, -0.12, 0.22]} rotation={[1.2, 0, 0]} castShadow>
-                  <boxGeometry args={[0.09, 0.2, 0.09]} />
-                  <meshStandardMaterial color={shirtColor} roughness={0.8} />
-                </mesh>
-                <mesh position={[x > 0 ? 0.1 : -0.1, -0.15, 0.35]} castShadow>
-                  <boxGeometry args={[0.08, 0.06, 0.1]} />
-                  <meshStandardMaterial color={skinColor} roughness={0.7} />
-                </mesh>
+            {[-1, 1].map((side, i) => (
+              <group key={i} position={[side * 0.22, 0.28, 0]}>
+                {/* Upper arm */}
+                <group rotation={[0.8, 0, side * -0.4]}>
+                  <mesh castShadow position={[0, -0.1, 0]}>
+                    <capsuleGeometry args={[0.045, 0.14, 8, 12]} />
+                    {shirtMaterial}
+                  </mesh>
+                  {/* Forearm */}
+                  <group position={[0, -0.22, 0]} rotation={[0.8, 0, 0]}>
+                    <mesh castShadow position={[0, -0.08, 0]}>
+                      <capsuleGeometry args={[0.04, 0.12, 8, 12]} />
+                      {shirtMaterial}
+                    </mesh>
+                    {/* Hand */}
+                    <mesh castShadow position={[0, -0.18, 0]}>
+                      <sphereGeometry args={[0.04, 12, 12]} />
+                      {skinMaterial}
+                    </mesh>
+                  </group>
+                </group>
               </group>
             ))}
           </>
         ) : (
-          // Standing/walking arms - at sides
+          // Standing/walking arms
           <>
-            <group ref={leftArmRef} position={[-0.25, 0.25, 0]}>
-              <mesh position={[0, -0.15, 0]} castShadow>
-                <boxGeometry args={[0.1, 0.3, 0.1]} />
-                <meshStandardMaterial color={shirtColor} roughness={0.8} />
+            <group ref={leftArmRef} position={[-0.22, 0.28, 0]}>
+              <mesh castShadow position={[0, -0.12, 0]}>
+                <capsuleGeometry args={[0.045, 0.16, 8, 12]} />
+                {shirtMaterial}
               </mesh>
-              <mesh position={[0, -0.35, 0]} castShadow>
-                <boxGeometry args={[0.09, 0.2, 0.09]} />
-                <meshStandardMaterial color={skinColor} roughness={0.7} />
+              <mesh castShadow position={[0, -0.32, 0]}>
+                <capsuleGeometry args={[0.04, 0.14, 8, 12]} />
+                {skinMaterial}
+              </mesh>
+              <mesh castShadow position={[0, -0.46, 0]}>
+                <sphereGeometry args={[0.04, 12, 12]} />
+                {skinMaterial}
               </mesh>
             </group>
-            <group ref={rightArmRef} position={[0.25, 0.25, 0]}>
-              <mesh position={[0, -0.15, 0]} castShadow>
-                <boxGeometry args={[0.1, 0.3, 0.1]} />
-                <meshStandardMaterial color={shirtColor} roughness={0.8} />
+            <group ref={rightArmRef} position={[0.22, 0.28, 0]}>
+              <mesh castShadow position={[0, -0.12, 0]}>
+                <capsuleGeometry args={[0.045, 0.16, 8, 12]} />
+                {shirtMaterial}
               </mesh>
-              <mesh position={[0, -0.35, 0]} castShadow>
-                <boxGeometry args={[0.09, 0.2, 0.09]} />
-                <meshStandardMaterial color={skinColor} roughness={0.7} />
+              <mesh castShadow position={[0, -0.32, 0]}>
+                <capsuleGeometry args={[0.04, 0.14, 8, 12]} />
+                {skinMaterial}
+              </mesh>
+              <mesh castShadow position={[0, -0.46, 0]}>
+                <sphereGeometry args={[0.04, 12, 12]} />
+                {skinMaterial}
               </mesh>
             </group>
           </>
         )}
 
-        {/* Legs */}
+        {/* === HIPS / PELVIS === */}
+        <mesh castShadow position={[0, -0.08, 0]}>
+          <sphereGeometry args={[0.13, 12, 12]} />
+          {pantsMaterial}
+        </mesh>
+
+        {/* === LEGS === */}
         {isSeated ? (
-          // Seated legs - bent at knees
+          // Seated legs - bent
           <>
-            {[-0.1, 0.1].map((x, i) => (
-              <group key={i} position={[x, 0, 0]}>
-                <mesh position={[0, 0.05, 0.15]} rotation={[1.5, 0, 0]} castShadow>
-                  <boxGeometry args={[0.14, 0.25, 0.14]} />
-                  <meshStandardMaterial color={pantsColor} roughness={0.8} />
+            {[-0.08, 0.08].map((x, i) => (
+              <group key={i} position={[x, -0.1, 0]}>
+                {/* Thigh - horizontal */}
+                <group rotation={[Math.PI / 2.2, 0, 0]}>
+                  <mesh castShadow position={[0, -0.12, 0]}>
+                    <capsuleGeometry args={[0.055, 0.18, 8, 12]} />
+                    {pantsMaterial}
+                  </mesh>
+                </group>
+                {/* Lower leg - vertical */}
+                <mesh castShadow position={[0, -0.35, 0.22]}>
+                  <capsuleGeometry args={[0.045, 0.2, 8, 12]} />
+                  {pantsMaterial}
                 </mesh>
-                <mesh position={[0, -0.2, 0.25]} castShadow>
-                  <boxGeometry args={[0.12, 0.35, 0.12]} />
-                  <meshStandardMaterial color={pantsColor} roughness={0.8} />
-                </mesh>
-                <mesh position={[0, -0.38, 0.3]} castShadow>
-                  <boxGeometry args={[0.1, 0.06, 0.18]} />
-                  <meshStandardMaterial color="#1a1a1a" roughness={0.5} />
+                {/* Foot */}
+                <mesh castShadow position={[0, -0.52, 0.26]} rotation={[0.2, 0, 0]}>
+                  <boxGeometry args={[0.07, 0.04, 0.12]} />
+                  <meshStandardMaterial color={shoeColor} roughness={0.5} />
                 </mesh>
               </group>
             ))}
@@ -169,149 +211,205 @@ export function Character({
         ) : (
           // Standing/walking legs
           <>
-            <group ref={leftLegRef} position={[-0.1, 0, 0]}>
-              <mesh position={[0, -0.2, 0]} castShadow>
-                <boxGeometry args={[0.14, 0.4, 0.14]} />
-                <meshStandardMaterial color={pantsColor} roughness={0.8} />
+            <group ref={leftLegRef} position={[-0.08, -0.12, 0]}>
+              {/* Thigh */}
+              <mesh castShadow position={[0, -0.14, 0]}>
+                <capsuleGeometry args={[0.06, 0.2, 8, 12]} />
+                {pantsMaterial}
               </mesh>
-              <mesh position={[0, -0.55, 0]} castShadow>
-                <boxGeometry args={[0.12, 0.35, 0.12]} />
-                <meshStandardMaterial color={pantsColor} roughness={0.8} />
+              {/* Shin */}
+              <mesh castShadow position={[0, -0.42, 0]}>
+                <capsuleGeometry args={[0.05, 0.22, 8, 12]} />
+                {pantsMaterial}
               </mesh>
-              <mesh position={[0, -0.75, 0.05]} castShadow>
-                <boxGeometry args={[0.1, 0.06, 0.18]} />
-                <meshStandardMaterial color="#1a1a1a" roughness={0.5} />
+              {/* Foot */}
+              <mesh castShadow position={[0, -0.62, 0.04]} rotation={[-0.1, 0, 0]}>
+                <boxGeometry args={[0.08, 0.05, 0.14]} />
+                <meshStandardMaterial color={shoeColor} roughness={0.5} />
               </mesh>
             </group>
-            <group ref={rightLegRef} position={[0.1, 0, 0]}>
-              <mesh position={[0, -0.2, 0]} castShadow>
-                <boxGeometry args={[0.14, 0.4, 0.14]} />
-                <meshStandardMaterial color={pantsColor} roughness={0.8} />
+            <group ref={rightLegRef} position={[0.08, -0.12, 0]}>
+              <mesh castShadow position={[0, -0.14, 0]}>
+                <capsuleGeometry args={[0.06, 0.2, 8, 12]} />
+                {pantsMaterial}
               </mesh>
-              <mesh position={[0, -0.55, 0]} castShadow>
-                <boxGeometry args={[0.12, 0.35, 0.12]} />
-                <meshStandardMaterial color={pantsColor} roughness={0.8} />
+              <mesh castShadow position={[0, -0.42, 0]}>
+                <capsuleGeometry args={[0.05, 0.22, 8, 12]} />
+                {pantsMaterial}
               </mesh>
-              <mesh position={[0, -0.75, 0.05]} castShadow>
-                <boxGeometry args={[0.1, 0.06, 0.18]} />
-                <meshStandardMaterial color="#1a1a1a" roughness={0.5} />
+              <mesh castShadow position={[0, -0.62, 0.04]} rotation={[-0.1, 0, 0]}>
+                <boxGeometry args={[0.08, 0.05, 0.14]} />
+                <meshStandardMaterial color={shoeColor} roughness={0.5} />
               </mesh>
             </group>
           </>
         )}
 
-        {/* Head group */}
-        <group ref={headRef} position={[0, 0.7, 0]}>
-          {/* Head */}
+        {/* === HEAD === */}
+        <group ref={headRef} position={[0, 0.56, 0]}>
+          {/* Head - smooth sphere */}
           <mesh castShadow>
-            <boxGeometry args={[0.22, 0.26, 0.22]} />
-            <meshStandardMaterial color={skinColor} roughness={0.7} />
+            <sphereGeometry args={[0.14, 24, 24]} />
+            {skinMaterial}
           </mesh>
 
-          {/* Hair - messy programmer hair */}
-          <mesh position={[0, 0.12, -0.02]} castShadow>
-            <boxGeometry args={[0.24, 0.08, 0.24]} />
-            <meshStandardMaterial color={hairColor} roughness={0.9} />
-          </mesh>
-          <mesh position={[-0.11, 0.02, 0]}>
-            <boxGeometry args={[0.04, 0.18, 0.2]} />
-            <meshStandardMaterial color={hairColor} roughness={0.9} />
-          </mesh>
-          <mesh position={[0.11, 0.02, 0]}>
-            <boxGeometry args={[0.04, 0.18, 0.2]} />
-            <meshStandardMaterial color={hairColor} roughness={0.9} />
-          </mesh>
-          <mesh position={[0, 0, -0.11]}>
-            <boxGeometry args={[0.22, 0.2, 0.04]} />
-            <meshStandardMaterial color={hairColor} roughness={0.9} />
-          </mesh>
-
-          {/* Glasses frames */}
-          <group position={[0, 0.02, 0.12]}>
-            <mesh position={[-0.055, 0, 0]}>
-              <boxGeometry args={[0.07, 0.05, 0.02]} />
-              <meshStandardMaterial color={glassesColor} roughness={0.3} metalness={0.5} />
+          {/* Hair - styled swoosh */}
+          <group position={[0, 0.06, 0]}>
+            {/* Main hair volume */}
+            <mesh castShadow position={[0, 0.04, -0.02]}>
+              <sphereGeometry args={[0.13, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+              <meshStandardMaterial color={hairColor} roughness={0.9} />
             </mesh>
-            <mesh position={[0.055, 0, 0]}>
-              <boxGeometry args={[0.07, 0.05, 0.02]} />
-              <meshStandardMaterial color={glassesColor} roughness={0.3} metalness={0.5} />
+            {/* Side hair */}
+            <mesh castShadow position={[-0.1, -0.02, 0]}>
+              <sphereGeometry args={[0.06, 12, 12]} />
+              <meshStandardMaterial color={hairColor} roughness={0.9} />
             </mesh>
-            <mesh position={[0, 0, 0]}>
-              <boxGeometry args={[0.03, 0.015, 0.015]} />
-              <meshStandardMaterial color={glassesColor} roughness={0.3} metalness={0.5} />
+            <mesh castShadow position={[0.1, -0.02, 0]}>
+              <sphereGeometry args={[0.06, 12, 12]} />
+              <meshStandardMaterial color={hairColor} roughness={0.9} />
             </mesh>
-            <mesh position={[-0.055, 0, 0.01]}>
-              <planeGeometry args={[0.055, 0.04]} />
-              <meshStandardMaterial color="#aaddff" transparent opacity={0.3} />
-            </mesh>
-            <mesh position={[0.055, 0, 0.01]}>
-              <planeGeometry args={[0.055, 0.04]} />
-              <meshStandardMaterial color="#aaddff" transparent opacity={0.3} />
+            {/* Front styled part */}
+            <mesh castShadow position={[0.04, 0.02, 0.1]} rotation={[0.3, 0.2, 0.1]}>
+              <boxGeometry args={[0.08, 0.04, 0.06]} />
+              <meshStandardMaterial color={hairColor} roughness={0.9} />
             </mesh>
           </group>
 
-          {/* Eyes */}
-          <mesh position={[-0.05, 0.02, 0.11]}>
-            <sphereGeometry args={[0.02, 8, 8]} />
-            <meshStandardMaterial color="#ffffff" />
-          </mesh>
-          <mesh position={[0.05, 0.02, 0.11]}>
-            <sphereGeometry args={[0.02, 8, 8]} />
-            <meshStandardMaterial color="#ffffff" />
-          </mesh>
-          <mesh position={[-0.05, 0.02, 0.125]}>
-            <sphereGeometry args={[0.01, 8, 8]} />
-            <meshStandardMaterial color="#2a1a0a" />
-          </mesh>
-          <mesh position={[0.05, 0.02, 0.125]}>
-            <sphereGeometry args={[0.01, 8, 8]} />
-            <meshStandardMaterial color="#2a1a0a" />
-          </mesh>
+          {/* Face features */}
+          <group position={[0, -0.02, 0.1]}>
+            {/* Eyes - larger, more expressive */}
+            <mesh position={[-0.045, 0.02, 0.04]}>
+              <sphereGeometry args={[0.025, 16, 16]} />
+              <meshStandardMaterial color="#ffffff" />
+            </mesh>
+            <mesh position={[0.045, 0.02, 0.04]}>
+              <sphereGeometry args={[0.025, 16, 16]} />
+              <meshStandardMaterial color="#ffffff" />
+            </mesh>
+            {/* Pupils */}
+            <mesh position={[-0.045, 0.02, 0.065]}>
+              <sphereGeometry args={[0.015, 12, 12]} />
+              <meshStandardMaterial color="#2d1810" />
+            </mesh>
+            <mesh position={[0.045, 0.02, 0.065]}>
+              <sphereGeometry args={[0.015, 12, 12]} />
+              <meshStandardMaterial color="#2d1810" />
+            </mesh>
+            {/* Eye shine */}
+            <mesh position={[-0.04, 0.03, 0.07]}>
+              <sphereGeometry args={[0.005, 8, 8]} />
+              <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.5} />
+            </mesh>
+            <mesh position={[0.05, 0.03, 0.07]}>
+              <sphereGeometry args={[0.005, 8, 8]} />
+              <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.5} />
+            </mesh>
 
-          {/* Nose */}
-          <mesh position={[0, -0.02, 0.12]}>
-            <boxGeometry args={[0.04, 0.05, 0.04]} />
-            <meshStandardMaterial color={skinColor} roughness={0.7} />
-          </mesh>
+            {/* Eyebrows */}
+            <mesh position={[-0.045, 0.055, 0.04]} rotation={[0, 0, 0.1]}>
+              <boxGeometry args={[0.04, 0.008, 0.015]} />
+              <meshStandardMaterial color={hairColor} roughness={0.9} />
+            </mesh>
+            <mesh position={[0.045, 0.055, 0.04]} rotation={[0, 0, -0.1]}>
+              <boxGeometry args={[0.04, 0.008, 0.015]} />
+              <meshStandardMaterial color={hairColor} roughness={0.9} />
+            </mesh>
 
-          {/* Mouth */}
-          <mesh position={[0, -0.08, 0.11]}>
-            <boxGeometry args={[0.08, 0.015, 0.02]} />
-            <meshStandardMaterial color="#a07060" roughness={0.8} />
-          </mesh>
+            {/* Nose - subtle */}
+            <mesh position={[0, -0.01, 0.04]}>
+              <sphereGeometry args={[0.02, 12, 12]} />
+              <meshStandardMaterial color={skinColorDark} roughness={0.6} />
+            </mesh>
+
+            {/* Mouth - slight smile */}
+            <mesh position={[0, -0.05, 0.03]}>
+              <torusGeometry args={[0.025, 0.006, 8, 12, Math.PI]} />
+              <meshStandardMaterial color="#c47a6a" roughness={0.8} />
+            </mesh>
+          </group>
 
           {/* Ears */}
-          <mesh position={[-0.12, 0, 0]}>
-            <boxGeometry args={[0.03, 0.06, 0.04]} />
-            <meshStandardMaterial color={skinColor} roughness={0.7} />
+          <mesh castShadow position={[-0.135, 0, 0]} rotation={[0, -0.3, 0]}>
+            <sphereGeometry args={[0.03, 12, 12]} />
+            {skinMaterial}
           </mesh>
-          <mesh position={[0.12, 0, 0]}>
-            <boxGeometry args={[0.03, 0.06, 0.04]} />
-            <meshStandardMaterial color={skinColor} roughness={0.7} />
+          <mesh castShadow position={[0.135, 0, 0]} rotation={[0, 0.3, 0]}>
+            <sphereGeometry args={[0.03, 12, 12]} />
+            {skinMaterial}
           </mesh>
 
-          {/* Headphones */}
+          {/* Glasses - stylish frames */}
+          <group position={[0, 0, 0.12]}>
+            {/* Left lens */}
+            <mesh position={[-0.05, 0, 0]}>
+              <ringGeometry args={[0.025, 0.032, 16]} />
+              <meshStandardMaterial color="#1a1a1a" metalness={0.8} roughness={0.2} side={THREE.DoubleSide} />
+            </mesh>
+            {/* Right lens */}
+            <mesh position={[0.05, 0, 0]}>
+              <ringGeometry args={[0.025, 0.032, 16]} />
+              <meshStandardMaterial color="#1a1a1a" metalness={0.8} roughness={0.2} side={THREE.DoubleSide} />
+            </mesh>
+            {/* Bridge */}
+            <mesh position={[0, 0, 0]}>
+              <boxGeometry args={[0.03, 0.008, 0.008]} />
+              <meshStandardMaterial color="#1a1a1a" metalness={0.8} roughness={0.2} />
+            </mesh>
+            {/* Lens glass */}
+            <mesh position={[-0.05, 0, 0.002]}>
+              <circleGeometry args={[0.024, 16]} />
+              <meshStandardMaterial color="#cceeff" transparent opacity={0.2} side={THREE.DoubleSide} />
+            </mesh>
+            <mesh position={[0.05, 0, 0.002]}>
+              <circleGeometry args={[0.024, 16]} />
+              <meshStandardMaterial color="#cceeff" transparent opacity={0.2} side={THREE.DoubleSide} />
+            </mesh>
+            {/* Temple arms */}
+            <mesh position={[-0.08, 0, -0.04]} rotation={[0, 0.3, 0]}>
+              <boxGeometry args={[0.08, 0.006, 0.006]} />
+              <meshStandardMaterial color="#1a1a1a" metalness={0.8} roughness={0.2} />
+            </mesh>
+            <mesh position={[0.08, 0, -0.04]} rotation={[0, -0.3, 0]}>
+              <boxGeometry args={[0.08, 0.006, 0.006]} />
+              <meshStandardMaterial color="#1a1a1a" metalness={0.8} roughness={0.2} />
+            </mesh>
+          </group>
+
+          {/* Headphones - sleek design */}
           <group>
-            <mesh position={[0, 0.18, 0]} rotation={[0, 0, 0]}>
-              <torusGeometry args={[0.14, 0.015, 8, 16, Math.PI]} />
-              <meshStandardMaterial color="#2a2a2a" roughness={0.4} metalness={0.6} />
+            {/* Headband */}
+            <mesh position={[0, 0.12, 0]} rotation={[0.1, 0, 0]}>
+              <torusGeometry args={[0.14, 0.012, 8, 24, Math.PI]} />
+              <meshStandardMaterial color="#2d2d2d" metalness={0.7} roughness={0.3} />
             </mesh>
-            <mesh position={[-0.14, 0.02, 0]}>
-              <cylinderGeometry args={[0.05, 0.05, 0.03, 12]} />
-              <meshStandardMaterial color="#1a1a1a" roughness={0.5} />
+            {/* Padding on headband */}
+            <mesh position={[0, 0.14, -0.02]}>
+              <boxGeometry args={[0.08, 0.02, 0.025]} />
+              <meshStandardMaterial color="#404040" roughness={0.8} />
             </mesh>
-            <mesh position={[-0.14, 0.02, 0]} rotation={[0, 0, Math.PI / 2]}>
-              <cylinderGeometry args={[0.04, 0.04, 0.01, 12]} />
-              <meshStandardMaterial color="#3a3a3a" roughness={0.4} />
-            </mesh>
-            <mesh position={[0.14, 0.02, 0]}>
-              <cylinderGeometry args={[0.05, 0.05, 0.03, 12]} />
-              <meshStandardMaterial color="#1a1a1a" roughness={0.5} />
-            </mesh>
-            <mesh position={[0.14, 0.02, 0]} rotation={[0, 0, Math.PI / 2]}>
-              <cylinderGeometry args={[0.04, 0.04, 0.01, 12]} />
-              <meshStandardMaterial color="#3a3a3a" roughness={0.4} />
-            </mesh>
+            {/* Left ear cup */}
+            <group position={[-0.15, 0.02, 0]}>
+              <mesh rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[0.055, 0.055, 0.025, 16]} />
+                <meshStandardMaterial color="#1a1a1a" metalness={0.6} roughness={0.4} />
+              </mesh>
+              <mesh position={[-0.015, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[0.045, 0.045, 0.01, 16]} />
+                <meshStandardMaterial color="#00ccff" emissive="#00ccff" emissiveIntensity={0.3} />
+              </mesh>
+            </group>
+            {/* Right ear cup */}
+            <group position={[0.15, 0.02, 0]}>
+              <mesh rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[0.055, 0.055, 0.025, 16]} />
+                <meshStandardMaterial color="#1a1a1a" metalness={0.6} roughness={0.4} />
+              </mesh>
+              <mesh position={[0.015, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[0.045, 0.045, 0.01, 16]} />
+                <meshStandardMaterial color="#00ccff" emissive="#00ccff" emissiveIntensity={0.3} />
+              </mesh>
+            </group>
           </group>
         </group>
       </group>
