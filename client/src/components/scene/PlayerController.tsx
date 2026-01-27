@@ -9,7 +9,7 @@ const ROTATION_SPEED = 3;
 const JUMP_FORCE = 6;
 const GRAVITY = 18;
 
-// Sit zone - matches the purple ring on the floor (carpet RGB edge)
+// Sit zone - matches the purple ring on the floor
 const SIT_ZONE = { x: 0, z: -1.5, radius: 1.4 };
 const CHAIR_POSITION = { x: 0, z: -1 };
 
@@ -21,38 +21,25 @@ export function PlayerController({ children }: PlayerControllerProps) {
   const groupRef = useRef<THREE.Group>(null);
   const { camera } = useThree();
 
-  // Get store actions (these don't cause re-renders)
   const setPlayerPosition = useGameStore((state) => state.setPlayerPosition);
   const setMovement = useGameStore((state) => state.setMovement);
   const toggleStand = useGameStore((state) => state.toggleStand);
-
-  // Subscribe to specific values we need reactively
   const pose = useGameStore((state) => state.playerPosition.pose);
   const currentView = useGameStore((state) => state.currentView);
 
-  // Use refs for all real-time physics/movement (avoids React re-renders)
-  const posRef = useRef({ x: 0, y: 0, z: -1, rotation: 0 });
+  // All physics/position in refs for smooth updates
+  // rotation: 0 = facing +Z, PI = facing -Z (toward monitors)
+  const posRef = useRef({ x: 0, y: 0, z: -1, rotation: Math.PI });
   const velocityY = useRef(0);
   const isJumping = useRef(false);
   const movementRef = useRef({ forward: false, backward: false, left: false, right: false });
   const isRunningRef = useRef(false);
   const isMovingRef = useRef(false);
+  const lastSyncRef = useRef(0);
 
-  // For triggering pose updates only when needed
   const [, forceUpdate] = useState(0);
 
-  // Sync initial position from store on mount
-  useEffect(() => {
-    const state = useGameStore.getState();
-    posRef.current = {
-      x: state.playerPosition.x,
-      y: state.playerPosition.y,
-      z: state.playerPosition.z,
-      rotation: state.playerPosition.rotation,
-    };
-  }, []);
-
-  // Handle keyboard input
+  // Keyboard handlers
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (currentView !== 'office') return;
 
@@ -142,18 +129,18 @@ export function PlayerController({ children }: PlayerControllerProps) {
     };
   }, [handleKeyDown, handleKeyUp]);
 
-  // Track last store sync time
-  const lastSyncRef = useRef(0);
-
-  // Main game loop
   useFrame((_, delta) => {
     if (!groupRef.current) return;
 
-    // When seated, position at chair
+    // Seated: sit at chair facing monitors (-Z direction, rotation = PI)
     if (pose === 'seated') {
       groupRef.current.position.set(CHAIR_POSITION.x, 0, CHAIR_POSITION.z);
-      groupRef.current.rotation.y = Math.PI;
-      posRef.current = { x: CHAIR_POSITION.x, y: 0, z: CHAIR_POSITION.z, rotation: 0 };
+      groupRef.current.rotation.y = Math.PI; // Face -Z (monitors)
+      posRef.current = { x: CHAIR_POSITION.x, y: 0, z: CHAIR_POSITION.z, rotation: Math.PI };
+
+      // Camera for seated view
+      camera.position.lerp(new THREE.Vector3(0, 2.5, 3), 3 * delta);
+      camera.lookAt(0, 1.2, -2);
       return;
     }
 
@@ -170,21 +157,22 @@ export function PlayerController({ children }: PlayerControllerProps) {
       isJumping.current = false;
     }
 
-    // Rotation
+    // Turning with A/D
     if (movement.left) rotation += ROTATION_SPEED * delta;
     if (movement.right) rotation -= ROTATION_SPEED * delta;
 
-    // Movement speed
     const speed = isRunningRef.current ? RUN_SPEED : WALK_SPEED;
 
-    // Forward/backward movement (swapped - W goes toward camera's forward)
+    // Movement in facing direction
+    // rotation=0 → face +Z → sin(0)=0, cos(0)=1 → move +Z
+    // rotation=PI → face -Z → sin(PI)=0, cos(PI)=-1 → move -Z
     if (movement.forward) {
-      x -= Math.sin(rotation) * speed * delta;
+      x += Math.sin(rotation) * speed * delta;
       z += Math.cos(rotation) * speed * delta;
       isMoving = true;
     }
     if (movement.backward) {
-      x += Math.sin(rotation) * speed * delta * 0.6;
+      x -= Math.sin(rotation) * speed * delta * 0.6;
       z -= Math.cos(rotation) * speed * delta * 0.6;
       isMoving = true;
     }
@@ -193,32 +181,29 @@ export function PlayerController({ children }: PlayerControllerProps) {
     x = Math.max(-4, Math.min(4, x));
     z = Math.max(-4, Math.min(4, z));
 
-    // Store in ref (no React re-render)
     posRef.current = { x, y, z, rotation };
 
-    // Update 3D objects directly (smooth)
+    // Update 3D transform - rotation directly (no offset)
+    // Character model faces +Z, rotation rotates it
     groupRef.current.position.set(x, y, z);
-    groupRef.current.rotation.y = rotation + Math.PI;
+    groupRef.current.rotation.y = rotation;
 
-    // Camera follow
-    const cameraOffset = new THREE.Vector3(0, 2.5, 4);
-    cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotation);
-    const targetPos = new THREE.Vector3(
-      x + cameraOffset.x,
-      y + cameraOffset.y,
-      z + cameraOffset.z
-    );
-    camera.position.lerp(targetPos, 5 * delta);
+    // Camera follows behind player
+    // Offset is behind the player (-Z in local space), rotated by player rotation
+    const behindOffset = new THREE.Vector3(0, 2.5, -4);
+    behindOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotation);
+    const targetCamPos = new THREE.Vector3(x + behindOffset.x, y + behindOffset.y, z + behindOffset.z);
+
+    camera.position.lerp(targetCamPos, 5 * delta);
     camera.lookAt(x, y + 1.2, z);
 
-    // Sync to store less frequently (every 100ms) for HUD/other components
+    // Sync to store periodically
     const now = performance.now();
     if (now - lastSyncRef.current > 100) {
       lastSyncRef.current = now;
       const newPose = isMoving ? 'walking' : 'standing';
       setPlayerPosition({ x, y, z, rotation, isMoving, pose: newPose });
 
-      // Update moving state for animation
       if (isMoving !== isMovingRef.current) {
         isMovingRef.current = isMoving;
         forceUpdate(n => n + 1);
@@ -227,7 +212,7 @@ export function PlayerController({ children }: PlayerControllerProps) {
   });
 
   return (
-    <group ref={groupRef} position={[posRef.current.x, 0, posRef.current.z]}>
+    <group ref={groupRef}>
       {children}
     </group>
   );
