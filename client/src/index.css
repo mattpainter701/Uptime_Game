@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+/* NetOps Tower - Cyberpunk Theme */
+:root {
+  --color-neon-pink: #ff0080;
+  --color-neon-cyan: #00ffff;
+  --color-neon-green: #00ff41;
+  --color-neon-purple: #8000ff;
+  --color-bg-dark: #0a0a15;
+  --color-bg-panel: #1a1a2e;
+  --color-text: #e0e0e0;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--color-bg-dark);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: var(--color-text);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-neon-cyan);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neon-pink);
+}
+
+/* Glow effects */
+.glow-pink {
+  box-shadow: 0 0 10px var(--color-neon-pink), 0 0 20px var(--color-neon-pink);
+}
+
+.glow-cyan {
+  box-shadow: 0 0 10px var(--color-neon-cyan), 0 0 20px var(--color-neon-cyan);
+}
+
+.glow-green {
+  box-shadow: 0 0 10px var(--color-neon-green), 0 0 20px var(--color-neon-green);
+}
+
+.text-glow-pink {
+  text-shadow: 0 0 10px var(--color-neon-pink);
+}
+
+.text-glow-cyan {
+  text-shadow: 0 0 10px var(--color-neon-cyan);
+}
+
+.text-glow-green {
+  text-shadow: 0 0 10px var(--color-neon-green);
+}
+
+/* Glass effect panels */
+.glass-panel {
+  background: rgba(26, 26, 46, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 255, 255, 0.2);
+  border-radius: 8px;
+}
+
+/* Animation */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* xterm.js overrides */
+.xterm {
+  height: 100%;
+  padding: 8px;
+}
+
+.xterm-viewport {
+  overflow-y: auto !important;
+}

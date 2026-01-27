@@ -1,0 +1,35 @@
+"""
+NetOps Tower - Lab Management Routes
+"""
+from fastapi import APIRouter, HTTPException, Query
+from typing import List, Optional
+
+from ..services.eveng import eveng_client
+from ..models.schemas import LabInfo, APIResponse
+
+router = APIRouter(prefix="/labs", tags=["Labs"])
+
+
+@router.get("/", response_model=List[LabInfo])
+async def list_labs(folder: str = Query("/", description="Folder path to list labs from")):
+    """List all labs in a folder."""
+    labs = await eveng_client.list_labs(folder)
+    return labs
+
+
+@router.get("/{lab_path:path}/info")
+async def get_lab_info(lab_path: str):
+    """Get detailed lab information."""
+    lab = await eveng_client.get_lab(lab_path)
+    if not lab:
+        raise HTTPException(status_code=404, detail="Lab not found")
+    return {"success": True, "data": lab}
+
+
+@router.post("/{lab_path:path}/open", response_model=APIResponse)
+async def open_lab(lab_path: str):
+    """Open/activate a lab."""
+    success = await eveng_client.open_lab(lab_path)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to open lab")
+    return APIResponse(success=True, message=f"Lab {lab_path} opened")
