@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId } from '../types/game';
+import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId, InteractionZone, FloorId, CommandRecord, StoryArcProgress } from '../types/game';
 import { ITEM_DEFINITIONS } from '../types/game';
 import { api } from '../services/api';
 import type { NodeUptimeStats as ServerNodeStats } from '../services/api';
@@ -104,6 +104,31 @@ interface GameState {
   hasItem: (itemId: ItemId, quantity?: number) => boolean;
   getItemCount: (itemId: ItemId) => number;
   hasRequiredItems: (items: ItemId[]) => boolean;
+
+  // Interaction system
+  nearestInteraction: InteractionZone | null;
+  setNearestInteraction: (zone: InteractionZone | null) => void;
+  triggerInteraction: (zone: InteractionZone) => void;
+
+  // Ticket validation
+  commandHistory: CommandRecord[];
+  recordCommand: (node: string, command: string, output: string) => void;
+  validateTicket: () => { valid: boolean; failed: string[] };
+
+  // Completed tickets tracking
+  completedTicketIds: string[];
+
+  // Floor visit tracking (for floor requirements)
+  floorVisits: Record<FloorId, boolean>;
+
+  // Story arcs
+  storyProgress: Record<string, StoryArcProgress>;
+  acceptStoryArc: (arcId: string) => void;
+
+  // Active dialogue
+  activeDialogue: { npcId: string; nodeId: string } | null;
+  startDialogue: (npcId: string) => void;
+  advanceDialogue: (nextNodeId: string | null) => void;
 }
 
 // Sample tickets for demo
@@ -520,6 +545,8 @@ export const useGameStore = create<GameState>()(
           activeTicket: { ...ticket, status: 'active', startedAt: Date.now() },
           availableTickets: state.availableTickets.filter(t => t.id !== ticket.id),
           currentView: 'terminal',
+          commandHistory: [],
+          floorVisits: { basement: false, lobby: false, floor1: false, floor2: false, floor3: false },
         }));
 
         // Start ticket timer
@@ -533,8 +560,21 @@ export const useGameStore = create<GameState>()(
       },
 
       completeTicket: async () => {
-        const { activeTicket, uptime } = get();
+        const { activeTicket, uptime, floorVisits } = get();
         if (!activeTicket) return;
+
+        // Validate solution
+        const validation = get().validateTicket();
+        if (!validation.valid) {
+          notifyError(`Not solved yet: ${validation.failed[0]}`, '❌');
+          return;
+        }
+
+        // Check floor requirement
+        if (activeTicket.floorRequirement && !floorVisits[activeTicket.floorRequirement]) {
+          notifyError(`You must visit ${activeTicket.floorRequirement} first`, '🏢');
+          return;
+        }
 
         // Stop timer
         get().stopTicketTimer();
@@ -570,11 +610,14 @@ export const useGameStore = create<GameState>()(
         const totalXp = Math.floor(baseXp * uptimeBonus);
         const reputationGain = Math.max(1, 10 - uptime.totalIncidents);
 
-        set({
+        const ticketId = activeTicket.id;
+        set((state) => ({
           activeTicket: null,
           activeLab: null,
           currentView: 'office',
-        });
+          completedTicketIds: [...state.completedTicketIds, ticketId],
+          commandHistory: [],
+        }));
 
         // Add rewards
         get().addCredits(totalCredits);
@@ -830,7 +873,11 @@ export const useGameStore = create<GameState>()(
       },
 
       // Elevator actions
-      setCurrentFloor: (floor) => set({ currentFloor: floor, elevatorOpen: false }),
+      setCurrentFloor: (floor) => set((state) => ({
+        currentFloor: floor,
+        elevatorOpen: false,
+        floorVisits: { ...state.floorVisits, [floor]: true },
+      })),
       openElevator: () => set({ elevatorOpen: true }),
       closeElevator: () => set({ elevatorOpen: false }),
 
@@ -879,6 +926,97 @@ export const useGameStore = create<GameState>()(
         const inventory = get().inventory;
         return items.every(itemId => (inventory[itemId] || 0) > 0);
       },
+
+      // Interaction system
+      nearestInteraction: null,
+      setNearestInteraction: (zone) => set({ nearestInteraction: zone }),
+      triggerInteraction: (zone) => {
+        if (zone.action === 'dialogue' && zone.npcId) {
+          get().startDialogue(zone.npcId);
+        } else if (zone.action === 'sit' || zone.action === 'elevator') {
+          // Handled by other systems
+        } else {
+          // Open the corresponding view
+          set({ currentView: zone.action as GameView });
+        }
+      },
+
+      // Ticket validation
+      commandHistory: [],
+      recordCommand: (node, command, output) => {
+        set((state) => ({
+          commandHistory: [...state.commandHistory, { node, command, output, timestamp: Date.now() }],
+        }));
+      },
+      validateTicket: () => {
+        const { activeTicket, commandHistory } = get();
+        if (!activeTicket) return { valid: false, failed: ['No active ticket'] };
+
+        const failed: string[] = [];
+        for (const criteria of activeTicket.validation) {
+          const params = criteria.params as Record<string, string | number | string[]>;
+          if (criteria.type === 'ping') {
+            const source = String(params.source || '');
+            const destination = String(params.destination || '');
+            const found = commandHistory.some(
+              (cmd) => cmd.node === source &&
+                cmd.command.includes(`ping ${destination}`) &&
+                cmd.output.includes('!')
+            );
+            if (!found) {
+              failed.push(`Ping ${destination} from ${source}`);
+            }
+          } else if (criteria.type === 'command') {
+            const node = String(params.node || '');
+            const command = String(params.command || '');
+            const contains = (params.contains || []) as string[];
+            const found = commandHistory.some(
+              (cmd) => cmd.node === node &&
+                cmd.command.includes(command) &&
+                contains.every((s) => cmd.output.includes(s))
+            );
+            if (!found) {
+              failed.push(`Run '${command}' on ${node} showing: ${contains.join(', ')}`);
+            }
+          }
+        }
+        return { valid: failed.length === 0, failed };
+      },
+
+      // Completed tickets
+      completedTicketIds: [],
+
+      // Floor visits
+      floorVisits: { basement: false, lobby: false, floor1: false, floor2: false, floor3: false },
+
+      // Story arcs
+      storyProgress: {},
+      acceptStoryArc: (arcId) => {
+        set((state) => ({
+          storyProgress: {
+            ...state.storyProgress,
+            [arcId]: { currentStep: 0, completed: false, accepted: true },
+          },
+        }));
+        notifySuccess('New story arc accepted!', '📖');
+      },
+
+      // Dialogue
+      activeDialogue: null,
+      startDialogue: (npcId) => {
+        set({ activeDialogue: { npcId, nodeId: 'start' }, currentView: 'dialogue' });
+      },
+      advanceDialogue: (nextNodeId) => {
+        if (nextNodeId === null) {
+          set({ activeDialogue: null, currentView: 'office' });
+        } else {
+          set((state) => ({
+            activeDialogue: state.activeDialogue
+              ? { ...state.activeDialogue, nodeId: nextNodeId }
+              : null,
+          }));
+        }
+      },
     }),
     {
       name: 'netops-tower-save',
@@ -886,6 +1024,8 @@ export const useGameStore = create<GameState>()(
         player: state.player,
         settings: state.settings,
         inventory: state.inventory,
+        completedTicketIds: state.completedTicketIds,
+        storyProgress: state.storyProgress,
       }),
     }
   )

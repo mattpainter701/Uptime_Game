@@ -2,6 +2,8 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useGameStore } from '../../store/gameStore';
+import { findNearestZone } from '../../data/interactionZones';
+import type { InteractionZone, GameView } from '../../types/game';
 
 const WALK_SPEED = 2.5;
 const RUN_SPEED = 5.0;
@@ -10,10 +12,12 @@ const JUMP_FORCE = 6;
 const GRAVITY = 18;
 
 // Sit zone - matches the purple ring on the floor
-const SIT_ZONE = { x: 0, z: -1.5, radius: 1.4 };
-const CHAIR_POSITION = { x: 0, z: -1.15 };
-// Desk interaction zone
-const DESK_ZONE = { minX: -2, maxX: 2, minZ: -3, maxZ: 0.5 };
+const SIT_ZONES: Record<string, { x: number; z: number; radius: number }> = {
+  basement: { x: 0, z: -1.5, radius: 1.4 },
+};
+const CHAIR_POSITIONS: Record<string, { x: number; z: number }> = {
+  basement: { x: 0, z: -1.15 },
+};
 
 interface PlayerControllerProps {
   children?: React.ReactNode;
@@ -27,6 +31,8 @@ export function PlayerController({ children }: PlayerControllerProps) {
   const setMovement = useGameStore((state) => state.setMovement);
   const toggleStand = useGameStore((state) => state.toggleStand);
   const setView = useGameStore((state) => state.setView);
+  const triggerInteraction = useGameStore((state) => state.triggerInteraction);
+  const setNearestInteraction = useGameStore((state) => state.setNearestInteraction);
   const pose = useGameStore((state) => state.playerPosition.pose);
   const currentView = useGameStore((state) => state.currentView);
   const currentFloor = useGameStore((state) => state.currentFloor);
@@ -47,8 +53,6 @@ export function PlayerController({ children }: PlayerControllerProps) {
   };
 
   // All physics/position in refs for smooth updates
-  // rotation: 0 = facing +Z, PI = facing -Z (toward monitors)
-  // y: character model's feet are ~0.75 below the group position, so start at 0.75
   const posRef = useRef({ x: 0, y: 0.75, z: -1, rotation: Math.PI });
   const velocityY = useRef(0);
   const isJumping = useRef(false);
@@ -56,6 +60,7 @@ export function PlayerController({ children }: PlayerControllerProps) {
   const isRunningRef = useRef(false);
   const isMovingRef = useRef(false);
   const lastSyncRef = useRef(0);
+  const nearestZoneRef = useRef<InteractionZone | null>(null);
 
   const [, forceUpdate] = useState(0);
 
@@ -97,31 +102,30 @@ export function PlayerController({ children }: PlayerControllerProps) {
           isJumping.current = true;
         }
         break;
-      case 'KeyE':
-        if (pose !== 'seated') {
+      case 'KeyE': {
+        // Sit/stand at chairs
+        const sitZone = SIT_ZONES[currentFloor];
+        if (pose !== 'seated' && sitZone) {
           const { x, z } = posRef.current;
           const dist = Math.sqrt(
-            Math.pow(x - SIT_ZONE.x, 2) + Math.pow(z - SIT_ZONE.z, 2)
+            Math.pow(x - sitZone.x, 2) + Math.pow(z - sitZone.z, 2)
           );
-          if (dist <= SIT_ZONE.radius) {
+          if (dist <= sitZone.radius) {
             toggleStand();
           }
         }
         break;
-      case 'KeyF':
-        // Use computer when near desk (seated or standing)
-        if (currentFloor === 'basement') {
-          const { x, z } = posRef.current;
-          const isNearDesk = pose === 'seated' ||
-            (x >= DESK_ZONE.minX && x <= DESK_ZONE.maxX &&
-             z >= DESK_ZONE.minZ && z <= DESK_ZONE.maxZ);
-          if (isNearDesk) {
-            setView('terminal');
-          }
+      }
+      case 'KeyF': {
+        // Generalized interaction - find nearest zone on current floor
+        const zone = nearestZoneRef.current;
+        if (zone) {
+          triggerInteraction(zone);
         }
         break;
+      }
     }
-  }, [currentView, pose, setMovement, toggleStand, setView, currentFloor]);
+  }, [currentView, pose, setMovement, toggleStand, setView, currentFloor, triggerInteraction]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     switch (e.code) {
@@ -164,17 +168,23 @@ export function PlayerController({ children }: PlayerControllerProps) {
   useFrame((_, delta) => {
     if (!groupRef.current) return;
 
-    // Seated: sit at chair facing monitors (-Z direction, rotation = PI)
-    // Seated y position is lower since character bends legs
-    if (pose === 'seated') {
+    // Seated: sit at chair facing monitors
+    const chairPos = CHAIR_POSITIONS[currentFloor];
+    if (pose === 'seated' && chairPos) {
       const SEATED_Y = 0.48;
-      groupRef.current.position.set(CHAIR_POSITION.x, SEATED_Y, CHAIR_POSITION.z);
-      groupRef.current.rotation.y = Math.PI; // Face -Z (monitors)
-      posRef.current = { x: CHAIR_POSITION.x, y: SEATED_Y, z: CHAIR_POSITION.z, rotation: Math.PI };
+      groupRef.current.position.set(chairPos.x, SEATED_Y, chairPos.z);
+      groupRef.current.rotation.y = Math.PI;
+      posRef.current = { x: chairPos.x, y: SEATED_Y, z: chairPos.z, rotation: Math.PI };
 
-      // Camera for seated view
       camera.position.lerp(new THREE.Vector3(0, 2.5, 3), 3 * delta);
       camera.lookAt(0, 1.2, -2);
+
+      // Still check for nearby interactions when seated (e.g., computer)
+      const zone = findNearestZone(chairPos.x, chairPos.z, currentFloor);
+      if (zone !== nearestZoneRef.current) {
+        nearestZoneRef.current = zone;
+        setNearestInteraction(zone);
+      }
       return;
     }
 
@@ -183,7 +193,6 @@ export function PlayerController({ children }: PlayerControllerProps) {
     let isMoving = false;
 
     // Gravity & jumping
-    // Floor level is 0.75 to account for character model height
     const FLOOR_LEVEL = 0.75;
     velocityY.current -= GRAVITY * delta;
     y += velocityY.current * delta;
@@ -200,8 +209,6 @@ export function PlayerController({ children }: PlayerControllerProps) {
     const speed = isRunningRef.current ? RUN_SPEED : WALK_SPEED;
 
     // Movement in facing direction
-    // rotation=0 → face +Z → sin(0)=0, cos(0)=1 → move +Z
-    // rotation=PI → face -Z → sin(PI)=0, cos(PI)=-1 → move -Z
     if (movement.forward) {
       x += Math.sin(rotation) * speed * delta;
       z += Math.cos(rotation) * speed * delta;
@@ -220,19 +227,23 @@ export function PlayerController({ children }: PlayerControllerProps) {
 
     posRef.current = { x, y, z, rotation };
 
-    // Update 3D transform - rotation directly (no offset)
-    // Character model faces +Z, rotation rotates it
     groupRef.current.position.set(x, y, z);
     groupRef.current.rotation.y = rotation;
 
     // Camera follows behind player
-    // Offset is behind the player (-Z in local space), rotated by player rotation
     const behindOffset = new THREE.Vector3(0, 2.5, -4);
     behindOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotation);
     const targetCamPos = new THREE.Vector3(x + behindOffset.x, y + behindOffset.y, z + behindOffset.z);
 
     camera.position.lerp(targetCamPos, 5 * delta);
     camera.lookAt(x, y + 1.2, z);
+
+    // Check for nearby interaction zones
+    const zone = findNearestZone(x, z, currentFloor);
+    if (zone !== nearestZoneRef.current) {
+      nearestZoneRef.current = zone;
+      setNearestInteraction(zone);
+    }
 
     // Sync to store periodically
     const now = performance.now();

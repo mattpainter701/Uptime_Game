@@ -8,6 +8,7 @@ import { Group } from 'three';
 import { FloorIndicator } from '../FloorIndicator';
 
 interface CubicleFloorProps {
+  floorNumber?: 1 | 2;
   onElevatorUse: () => void;
 }
 
@@ -238,7 +239,7 @@ function NetworkCloset({ position }: { position: [number, number, number] }) {
   );
 }
 
-export function CubicleFloor({ onElevatorUse }: CubicleFloorProps) {
+export function CubicleFloor({ floorNumber = 1, onElevatorUse }: CubicleFloorProps) {
   const floorRef = useRef<Group>(null);
 
   // Different worker shirt colors for variety
