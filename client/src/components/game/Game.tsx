@@ -4,6 +4,7 @@ import { HUD } from '../ui/HUD';
 import { TicketPanel } from '../ui/TicketPanel';
 import { TerminalView } from '../terminal/TerminalView';
 import { ElevatorPanel } from '../ui/ElevatorPanel';
+import { ToastContainer } from '../ui/ToastContainer';
 import { FLOORS } from '../scene/Building';
 
 function OfficeView() {
@@ -240,6 +241,9 @@ export function Game() {
         onSelectFloor={setCurrentFloor}
         onClose={closeElevator}
       />
+
+      {/* Toast notifications */}
+      <ToastContainer />
     </div>
   );
 }

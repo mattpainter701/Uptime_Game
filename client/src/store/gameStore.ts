@@ -5,6 +5,7 @@ import { ITEM_DEFINITIONS } from '../types/game';
 import { api } from '../services/api';
 import type { NodeUptimeStats as ServerNodeStats } from '../services/api';
 import { UptimeWebSocket, type UptimeUpdate } from '../services/websocket';
+import { notify, notifySuccess, notifyError } from './notificationStore';
 
 interface GameState {
   // Player state
@@ -337,7 +338,7 @@ const SAMPLE_TICKETS: Ticket[] = [
 ];
 
 // Calculate XP needed for next level
-function getXpToNextLevel(currentXp: number): number {
+export function getXpToNextLevel(currentXp: number): number {
   const levels = [
     { level: 1, xpRequired: 0 },
     { level: 2, xpRequired: 500 },
@@ -359,7 +360,7 @@ function getXpToNextLevel(currentXp: number): number {
 }
 
 // Get level from XP
-function getLevelFromXp(xp: number): { level: number; title: string; floor: number } {
+export function getLevelFromXp(xp: number): { level: number; title: string; floor: number } {
   const levels = [
     { level: 1, title: 'Help Desk Tech', floor: 5, xpRequired: 0 },
     { level: 2, title: 'Junior NetAdmin', floor: 10, xpRequired: 500 },
@@ -478,20 +479,27 @@ export const useGameStore = create<GameState>()(
         player: { ...state.player, credits: state.player.credits + amount }
       })),
 
-      addXp: (amount) => set((state) => {
-        const newXp = state.player.xp + amount;
-        const levelInfo = getLevelFromXp(newXp);
-        return {
-          player: {
-            ...state.player,
-            xp: newXp,
-            level: levelInfo.level,
-            title: levelInfo.title,
-            floor: levelInfo.floor,
-            xpToNextLevel: getXpToNextLevel(newXp),
-          }
-        };
-      }),
+      addXp: (amount) => {
+        const prevLevel = get().player.level;
+        set((state) => {
+          const newXp = state.player.xp + amount;
+          const levelInfo = getLevelFromXp(newXp);
+          return {
+            player: {
+              ...state.player,
+              xp: newXp,
+              level: levelInfo.level,
+              title: levelInfo.title,
+              floor: levelInfo.floor,
+              xpToNextLevel: getXpToNextLevel(newXp),
+            }
+          };
+        });
+        const newLevel = get().player.level;
+        if (newLevel > prevLevel) {
+          notifySuccess(`Level up! You are now a ${get().player.title}`, '🎉');
+        }
+      },
 
       addReputation: (amount) => set((state) => ({
         player: { ...state.player, reputation: Math.max(0, state.player.reputation + amount) }
@@ -516,6 +524,8 @@ export const useGameStore = create<GameState>()(
 
         // Start ticket timer
         get().startTicketTimer();
+
+        notify(`Ticket accepted: ${ticket.title}`, 'info', '📋');
 
         // Note: Uptime tracking should be started when lab nodes are available
         // This would typically happen after lab is loaded
@@ -570,6 +580,8 @@ export const useGameStore = create<GameState>()(
         get().addCredits(totalCredits);
         get().addXp(totalXp);
         get().addReputation(reputationGain);
+
+        notifySuccess(`Ticket complete! +$${totalCredits} +${totalXp}XP`, '✅');
       },
 
       failTicket: () => {
@@ -599,6 +611,8 @@ export const useGameStore = create<GameState>()(
             uptimeWs: null,
           };
         });
+
+        notifyError('Ticket failed! -5 reputation', '❌');
       },
 
       revealHint: (hintIndex) => set((state) => {
@@ -833,6 +847,8 @@ export const useGameStore = create<GameState>()(
         set((state) => ({
           inventory: { ...state.inventory, [itemId]: newQuantity }
         }));
+        const name = itemDef?.name || itemId;
+        notify(`Picked up ${name}`, 'info', itemDef?.icon);
         return true;
       },
 
