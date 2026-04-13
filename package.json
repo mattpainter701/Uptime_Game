@@ -1,0 +1,35 @@
+{
+  "name": "netops-tower",
+  "version": "1.0.0",
+  "description": "NetOps Tower - Network Engineering Training Game",
+  "author": "NetOps Tower Team",
+  "license": "MIT",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\" \"wait-on http://localhost:3000 && npm run dev:electron\"",
+    "dev:client": "cd client && npm run dev",
+    "dev:server": "cd server && python -m uvicorn app.main:app --reload --port 8000",
+    "dev:electron": "cross-env NODE_ENV=development electron .",
+    "build": "node scripts/build.js",
+    "build:client": "cd client && npm run build",
+    "build:server": "node scripts/build-python.js",
+    "build:electron": "electron-builder",
+    "package": "npm run build && npm run build:electron",
+    "package:win": "npm run build && electron-builder --win",
+    "package:mac": "npm run build && electron-builder --mac",
+    "package:linux": "npm run build && electron-builder --linux",
+    "package:steam": "npm run build && electron-builder --config electron-builder.steam.yml",
+    "postinstall": "cd client && npm install"
+  },
+  "dependencies": {
+    "electron-log": "^5.1.7",
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^29.1.4",
+    "electron-builder": "^24.13.3",
+    "wait-on": "^7.2.0"
+  }
+}

@@ -4,6 +4,8 @@
  * REST API client for communicating with the backend.
  */
 
+// In Electron, the server runs on localhost:8000 bundled alongside the app.
+// In browser dev mode, use the env variable or default.
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 interface ApiResponse<T> {
