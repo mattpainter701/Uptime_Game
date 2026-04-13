@@ -1,0 +1,42 @@
+"AppBuild"
+{
+    // Replace with your actual Steam App ID after partner registration
+    "AppID" "0000000"
+    "Desc" "NetOps Tower Build"
+    "ContentRoot" "../release/steam"
+    "BuildOutput" "../release/steam/output"
+
+    "Depots"
+    {
+        // Windows Depot
+        "0000001"
+        {
+            "FileMapping"
+            {
+                "LocalPath" "win-unpacked/*"
+                "DepotPath" "."
+                "recursive" "1"
+            }
+        }
+        // macOS Depot
+        "0000002"
+        {
+            "FileMapping"
+            {
+                "LocalPath" "mac-unpacked/*"
+                "DepotPath" "."
+                "recursive" "1"
+            }
+        }
+        // Linux Depot
+        "0000003"
+        {
+            "FileMapping"
+            {
+                "LocalPath" "linux-unpacked/*"
+                "DepotPath" "."
+                "recursive" "1"
+            }
+        }
+    }
+}

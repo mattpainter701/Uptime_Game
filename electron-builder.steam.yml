@@ -1,0 +1,48 @@
+# electron-builder configuration for NetOps Tower - Steam Distribution
+# Builds a directory structure suitable for uploading via SteamPipe
+appId: com.netopstower.app
+productName: NetOps Tower
+copyright: Copyright © 2024 NetOps Tower Team
+
+directories:
+  output: release/steam
+  buildResources: electron/assets
+
+files:
+  - electron/**/*
+  - client/dist/**/*
+  - "!**/*.map"
+  - "!**/node_modules/**/*"
+
+extraResources:
+  # Bundle the PyInstaller-built server
+  - from: server/dist/netops-server
+    to: server
+    filter:
+      - "**/*"
+
+# Steam builds use unpacked directory format
+# SteamPipe handles its own compression and distribution
+win:
+  target:
+    - target: dir
+      arch:
+        - x64
+  icon: electron/assets/icon.ico
+
+mac:
+  target:
+    - target: dir
+      arch:
+        - x64
+        - arm64
+  icon: electron/assets/icon.icns
+  category: public.app-category.education
+
+linux:
+  target:
+    - target: dir
+      arch:
+        - x64
+  icon: electron/assets
+  category: Education

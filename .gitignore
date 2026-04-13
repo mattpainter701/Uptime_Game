@@ -45,5 +45,22 @@ htmlcov/
 *.tmp
 .cache/
 
+# Electron / Build
+release/
+*.blockmap
+*.snap
+*.AppImage
+*.dmg
+*.deb
+*.rpm
+
+# PyInstaller
+server/dist/
+server/build/
+*.spec.bak
+
+# Steam
+steam/output/
+
 # Claude Code
 .claude/

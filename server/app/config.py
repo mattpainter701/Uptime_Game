@@ -1,9 +1,13 @@
 """
 NetOps Tower - Configuration
 """
+import sys
 from pydantic_settings import BaseSettings
 from typing import List
 import os
+
+# Detect if running as a PyInstaller bundle
+IS_BUNDLED = getattr(sys, 'frozen', False)
 
 
 class Settings(BaseSettings):
@@ -15,9 +19,10 @@ class Settings(BaseSettings):
     eveng_verify_ssl: bool = False
 
     # Server Configuration
-    server_host: str = "0.0.0.0"
+    # When bundled (Electron), bind to localhost only for security
+    server_host: str = "127.0.0.1" if IS_BUNDLED else "0.0.0.0"
     server_port: int = 8000
-    cors_origins: str = "http://localhost:3000,http://localhost:3001"
+    cors_origins: str = "http://localhost:3000,http://localhost:3001,http://127.0.0.1:8000,file://"
 
     # Redis
     redis_url: str = "redis://localhost:6379"
