@@ -17,8 +17,9 @@ import { CubicleFloor } from './floors/CubicleFloor';
 import { Datacenter } from './floors/Datacenter';
 import { Character } from './Character';
 import { PlayerController } from './PlayerController';
+import type { FloorId } from '../../types/game';
 
-export type FloorId = 'basement' | 'lobby' | 'floor1' | 'floor2' | 'floor3';
+export type { FloorId };
 
 export interface FloorInfo {
   id: FloorId;
@@ -51,9 +52,9 @@ export function Building() {
       case 'lobby':
         return <Lobby onElevatorUse={handleElevatorUse} />;
       case 'floor1':
-        return <CubicleFloor onElevatorUse={handleElevatorUse} />;
+        return <CubicleFloor floorNumber={1} onElevatorUse={handleElevatorUse} />;
       case 'floor2':
-        return <CubicleFloor onElevatorUse={handleElevatorUse} />;
+        return <CubicleFloor floorNumber={2} onElevatorUse={handleElevatorUse} />;
       case 'floor3':
         return <Datacenter onElevatorUse={handleElevatorUse} />;
       default:

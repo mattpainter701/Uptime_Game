@@ -27,7 +27,7 @@ const FLOOR_DISPLAY_NAMES: Record<string, string> = {
 };
 
 export function HUD() {
-  const { player, activeTicket, currentView, setView, uptime, failTicket, playerPosition, currentFloor } = useGameStore();
+  const { player, activeTicket, currentView, setView, uptime, failTicket, playerPosition, currentFloor, nearestInteraction } = useGameStore();
 
   return (
     <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none">
@@ -225,15 +225,6 @@ export function HUD() {
                     <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">SPACE</kbd>
                     <span className="ml-2">Stand Up</span>
                   </span>
-                  {currentFloor === 'basement' && (
-                    <>
-                      <span className="text-gray-500">|</span>
-                      <span className="text-gray-400">
-                        <kbd className="px-2 py-1 bg-cyan-600 rounded text-white font-mono animate-pulse">F</kbd>
-                        <span className="ml-2 text-cyan-400">Use Computer</span>
-                      </span>
-                    </>
-                  )}
                 </>
               ) : (
                 <>
@@ -256,18 +247,16 @@ export function HUD() {
                     <kbd className="px-2 py-1 bg-gray-700 rounded text-cyan-400 font-mono">E</kbd>
                     <span className="ml-2">Sit</span>
                   </span>
-                  {/* Show F key hint when near desk in basement */}
-                  {currentFloor === 'basement' &&
-                   playerPosition.x >= -2 && playerPosition.x <= 2 &&
-                   playerPosition.z >= -3 && playerPosition.z <= 0.5 && (
-                    <>
-                      <span className="text-gray-500">|</span>
-                      <span className="text-gray-400">
-                        <kbd className="px-2 py-1 bg-cyan-600 rounded text-white font-mono animate-pulse">F</kbd>
-                        <span className="ml-2 text-cyan-400">Use Computer</span>
-                      </span>
-                    </>
-                  )}
+                </>
+              )}
+              {/* Dynamic interaction prompt */}
+              {nearestInteraction && (
+                <>
+                  <span className="text-gray-500">|</span>
+                  <span className="text-gray-400">
+                    <kbd className="px-2 py-1 bg-cyan-600 rounded text-white font-mono animate-pulse">F</kbd>
+                    <span className="ml-2 text-cyan-400">{nearestInteraction.icon} {nearestInteraction.label}</span>
+                  </span>
                 </>
               )}
             </div>

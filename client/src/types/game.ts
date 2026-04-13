@@ -28,7 +28,21 @@ export interface Ticket {
   startedAt?: number;
   requiredItems?: ItemId[]; // Items needed to work on this ticket
   consumeItems?: ItemId[]; // Items consumed when completing the ticket
+  chainId?: string; // Story arc this ticket belongs to
+  chainOrder?: number; // Order within the chain
+  floorRequirement?: FloorId; // Floor player must visit during ticket
+  topology?: string; // ASCII art topology for terminal view
+  nodes?: TicketNode[]; // Nodes available in the lab for this ticket
 }
+
+export interface TicketNode {
+  id: number;
+  name: string;
+  type: 'router' | 'switch' | 'server' | 'pc' | 'firewall';
+  status: 'running' | 'stopped';
+}
+
+export type FloorId = 'basement' | 'lobby' | 'floor1' | 'floor2' | 'floor3';
 
 export type TicketCategory =
   | 'network-basics'
@@ -67,7 +81,7 @@ export interface Lab {
   topology: string; // SVG or image URL
 }
 
-export type GameView = 'office' | 'terminal' | 'tickets' | 'shop' | 'settings';
+export type GameView = 'office' | 'terminal' | 'tickets' | 'shop' | 'settings' | 'knowledge-base' | 'whiteboard' | 'network-closet' | 'server-rack' | 'dialogue' | 'story';
 
 export type TimeOfDay = number; // 0-24
 
@@ -219,3 +233,65 @@ export const CAREER_LEVELS = [
   { level: 7, title: 'Principal Engineer', floor: 45, xpRequired: 20000 },
   { level: 8, title: 'CTO', floor: 50, xpRequired: 35000 },
 ] as const;
+
+// Interaction System
+export interface InteractionZone {
+  id: string;
+  position: { x: number; z: number };
+  radius: number;
+  label: string;
+  icon: string;
+  action: GameView | 'sit' | 'elevator' | 'dialogue';
+  floor: FloorId;
+  npcId?: string; // If action is 'dialogue', which NPC
+}
+
+// NPC System
+export interface DialogueNode {
+  id: string;
+  speaker: string;
+  text: string;
+  responses?: DialogueResponse[];
+}
+
+export interface DialogueResponse {
+  text: string;
+  nextId: string | null; // null = end dialogue
+  action?: 'accept-arc' | 'give-hint' | 'unlock-floor';
+  actionParam?: string;
+}
+
+export interface NPC {
+  id: string;
+  name: string;
+  role: string;
+  floor: FloorId;
+  position: { x: number; y: number; z: number };
+  color: string; // Shirt color hex
+  dialogueTree: DialogueNode[];
+}
+
+// Story Arc System
+export interface StoryArc {
+  id: string;
+  title: string;
+  description: string;
+  ticketIds: string[];
+  prerequisiteArcId?: string;
+  requiredLevel?: number;
+  reward: { credits: number; xp: number; reputation: number };
+}
+
+export interface StoryArcProgress {
+  currentStep: number;
+  completed: boolean;
+  accepted: boolean;
+}
+
+// Terminal command history for validation
+export interface CommandRecord {
+  node: string;
+  command: string;
+  output: string;
+  timestamp: number;
+}
