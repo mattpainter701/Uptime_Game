@@ -4,6 +4,7 @@ import { OrbitControls, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import { Building } from './Building';
 import { Lighting } from './Lighting';
+import { SceneErrorBoundary } from './SceneErrorBoundary';
 import { useGameStore } from '../../store/gameStore';
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib';
 
@@ -82,6 +83,7 @@ function CameraController() {
 
 export function GameCanvas() {
   return (
+    <SceneErrorBoundary>
     <div className="absolute inset-0">
       <Canvas
         shadows
@@ -114,6 +116,7 @@ export function GameCanvas() {
         <CameraController />
       </Canvas>
     </div>
+    </SceneErrorBoundary>
   );
 }
 
