@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useGameStore } from '../../store/gameStore';
 import { ConsoleWebSocket } from '../../services/websocket';
+import { createDefaultMockCliSession, type MockCliSession } from '../../mock-cli';
 
 interface TerminalTheme {
   background: string;
@@ -102,55 +103,6 @@ const themes: Record<string, TerminalTheme> = {
   },
 };
 
-// Demo commands and responses for simulation (fallback mode)
-const DEMO_COMMANDS: Record<string, string> = {
-  'help': `
-Available commands:
-  help              Show this help message
-  show ip route     Display IP routing table
-  show ip int brief Display interface summary
-  show running-config  Display running configuration
-  ping <host>       Ping a host
-  conf t            Enter configuration mode
-  exit              Exit current mode
-`,
-  'show ip route': `
-Codes: C - connected, S - static, R - RIP, O - OSPF
-
-Gateway of last resort is not set
-
-C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
-C    10.0.0.0/24 is directly connected, GigabitEthernet0/1
-`,
-  'show ip int brief': `
-Interface              IP-Address      OK? Method Status                Protocol
-GigabitEthernet0/0     192.168.1.1     YES NVRAM  up                    up
-GigabitEthernet0/1     10.0.0.1        YES NVRAM  up                    up
-GigabitEthernet0/2     unassigned      YES NVRAM  administratively down down
-`,
-  'show running-config': `
-Building configuration...
-
-Current configuration : 1024 bytes
-!
-hostname R1
-!
-interface GigabitEthernet0/0
- ip address 192.168.1.1 255.255.255.0
- no shutdown
-!
-interface GigabitEthernet0/1
- ip address 10.0.0.1 255.255.255.0
- no shutdown
-!
-line con 0
-line vty 0 4
- login
-!
-end
-`,
-};
-
 interface TerminalProps {
   nodeName?: string;
   nodeId?: number;
@@ -170,72 +122,59 @@ export function Terminal({
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<ConsoleWebSocket | null>(null);
+  const mockSessionRef = useRef<MockCliSession | null>(null);
   const [connected, setConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const [isRealMode, setIsRealMode] = useState(false);
   const settings = useGameStore((state) => state.settings);
 
   const writePrompt = useCallback((term: XTerm) => {
-    term.write(`\r\n\x1b[1;33m${nodeName}#\x1b[0m `);
+    const prompt = mockSessionRef.current?.prompt ?? `${nodeName}>`;
+    term.write(`\r\n\x1b[1;33m${prompt}\x1b[0m `);
   }, [nodeName]);
 
+  const writeOutput = useCallback((term: XTerm, output: string) => {
+    if (!output) return;
+    for (const line of output.split('\n')) {
+      term.writeln(line);
+    }
+  }, []);
+
   const processCommand = useCallback((term: XTerm, command: string) => {
-    const cmd = command.trim().toLowerCase();
+    const session = mockSessionRef.current ?? createDefaultMockCliSession(nodeName);
+    mockSessionRef.current = session;
 
-    if (cmd === '') {
-      writePrompt(term);
-      return;
+    let result;
+    try {
+      result = session.executeLine(command);
+    } catch (error) {
+      result = {
+        output: error instanceof Error ? error.message : 'Command failed',
+        error: true,
+      };
     }
 
-    if (cmd === 'clear') {
+    term.writeln('');
+
+    if (result.clearScreen) {
       term.clear();
-      writePrompt(term);
-      return;
+    } else if (result.output) {
+      if (result.error) {
+        term.write('\x1b[1;31m');
+      }
+      writeOutput(term, result.output);
+      if (result.error) {
+        term.write('\x1b[0m');
+      }
     }
 
-    if (cmd === 'exit') {
-      term.writeln('\r\n\x1b[1;33mDisconnecting...\x1b[0m');
+    if (result.disconnected) {
       onClose?.();
       return;
     }
 
-    if (cmd.startsWith('ping ')) {
-      const host = cmd.substring(5);
-      term.writeln('');
-      term.writeln(`\x1b[1;36mPinging ${host}...\x1b[0m`);
-
-      // Simulate ping
-      let count = 0;
-      const pingInterval = setInterval(() => {
-        if (count < 4) {
-          const time = Math.floor(Math.random() * 50) + 10;
-          term.writeln(`Reply from ${host}: bytes=64 time=${time}ms TTL=64`);
-          count++;
-        } else {
-          clearInterval(pingInterval);
-          term.writeln('');
-          term.writeln('Ping statistics:');
-          term.writeln('    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss)');
-          writePrompt(term);
-        }
-      }, 500);
-      return;
-    }
-
-    // Check for demo responses
-    const response = DEMO_COMMANDS[cmd];
-    if (response) {
-      term.write(response);
-      writePrompt(term);
-      return;
-    }
-
-    // Unknown command
-    term.writeln('');
-    term.writeln(`\x1b[1;31mUnknown command: ${command}\x1b[0m`);
-    term.writeln('Type "help" for available commands');
     writePrompt(term);
-  }, [nodeName, writePrompt, onClose]);
+  }, [nodeName, onClose, writeOutput, writePrompt]);
 
   // Setup real WebSocket connection
   const setupRealConnection = useCallback((term: XTerm) => {
@@ -291,6 +230,8 @@ export function Terminal({
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
+    mockSessionRef.current = createDefaultMockCliSession(nodeName);
+
     // Welcome message
     term.writeln('\x1b[1;36m╔══════════════════════════════════════════════╗\x1b[0m');
     term.writeln('\x1b[1;36m║           NetOps Tower Terminal              ║\x1b[0m');
@@ -342,6 +283,18 @@ export function Terminal({
       if (code === 13) { // Enter
         processCommand(term, currentInput);
         currentInput = '';
+      } else if (code === 9) { // Tab autocomplete
+        const suggestions = mockSessionRef.current?.autocomplete(currentInput) ?? [];
+        if (suggestions.length === 1) {
+          const currentToken = currentInput.endsWith(' ') ? '' : currentInput.split(/\s+/).pop() ?? '';
+          const insert = suggestions[0].slice(currentToken.length);
+          currentInput += insert;
+          term.write(insert);
+        } else if (suggestions.length > 1) {
+          term.writeln('');
+          term.writeln(suggestions.join('  '));
+          term.write(`\x1b[1;33m${mockSessionRef.current?.prompt ?? `${nodeName}>`}\x1b[0m ${currentInput}`);
+        }
       } else if (code === 127) { // Backspace
         if (currentInput.length > 0) {
           currentInput = currentInput.slice(0, -1);
