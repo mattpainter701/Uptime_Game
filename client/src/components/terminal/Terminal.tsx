@@ -5,7 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useGameStore } from '../../store/gameStore';
 import { ConsoleWebSocket } from '../../services/websocket';
-import { createDefaultMockCliSession, type MockCliSession } from '../../mock-cli';
+import { createMockCliForHostname } from '../../lib/mockApplianceCliRegistry';
 
 interface TerminalTheme {
   background: string;
@@ -122,59 +122,58 @@ export function Terminal({
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<ConsoleWebSocket | null>(null);
-  const mockSessionRef = useRef<MockCliSession | null>(null);
+  const createCli = useCallback((hostname: string) => {
+    return createMockCliForHostname(hostname);
+  }, []);
+  const cliRef = useRef(createCli(nodeName));
+  const connectedRef = useRef(false);
+  const realModeRef = useRef(false);
   const [connected, setConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const [isRealMode, setIsRealMode] = useState(false);
   const settings = useGameStore((state) => state.settings);
 
-  const writePrompt = useCallback((term: XTerm) => {
-    const prompt = mockSessionRef.current?.prompt ?? `${nodeName}>`;
-    term.write(`\r\n\x1b[1;33m${prompt}\x1b[0m `);
-  }, [nodeName]);
+  useEffect(() => {
+    connectedRef.current = connected;
+  }, [connected]);
 
-  const writeOutput = useCallback((term: XTerm, output: string) => {
-    if (!output) return;
-    for (const line of output.split('\n')) {
-      term.writeln(line);
-    }
+  useEffect(() => {
+    realModeRef.current = isRealMode;
+  }, [isRealMode]);
+
+  useEffect(() => {
+    cliRef.current = createCli(nodeName);
+  }, [createCli, nodeName]);
+
+  const writePrompt = useCallback((term: XTerm, prompt?: string) => {
+    term.write(`\r\n\x1b[1;33m${prompt ?? cliRef.current.getPrompt()}\x1b[0m `);
   }, []);
 
   const processCommand = useCallback((term: XTerm, command: string) => {
-    const session = mockSessionRef.current ?? createDefaultMockCliSession(nodeName);
-    mockSessionRef.current = session;
+    const trimmed = command.trim();
 
-    let result;
-    try {
-      result = session.executeLine(command);
-    } catch (error) {
-      result = {
-        output: error instanceof Error ? error.message : 'Command failed',
-        error: true,
-      };
+    if (trimmed === '') {
+      writePrompt(term);
+      return;
     }
 
-    term.writeln('');
-
-    if (result.clearScreen) {
+    if (trimmed.toLowerCase() === 'clear') {
       term.clear();
-    } else if (result.output) {
-      if (result.error) {
-        term.write('\x1b[1;31m');
-      }
-      writeOutput(term, result.output);
-      if (result.error) {
-        term.write('\x1b[0m');
-      }
+      writePrompt(term);
+      return;
     }
 
-    if (result.disconnected) {
+    const result = cliRef.current.run(command);
+    term.writeln('');
+    result.lines.forEach((line) => term.writeln(line));
+
+    if (result.shouldDisconnect) {
       onClose?.();
       return;
     }
 
-    writePrompt(term);
-  }, [nodeName, onClose, writeOutput, writePrompt]);
+    writePrompt(term, result.prompt);
+  }, [onClose, writePrompt]);
 
   // Setup real WebSocket connection
   const setupRealConnection = useCallback((term: XTerm) => {
@@ -230,8 +229,6 @@ export function Terminal({
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    mockSessionRef.current = createDefaultMockCliSession(nodeName);
-
     // Welcome message
     term.writeln('\x1b[1;36m╔══════════════════════════════════════════════╗\x1b[0m');
     term.writeln('\x1b[1;36m║           NetOps Tower Terminal              ║\x1b[0m');
@@ -249,7 +246,7 @@ export function Terminal({
           term.writeln('\x1b[1;32mConnected (Demo Mode)\x1b[0m');
           term.writeln('');
           term.writeln('\x1b[1;37mType "help" for available commands\x1b[0m');
-          writePrompt(term);
+          writePrompt(term, cliRef.current.getPrompt());
           setConnected(true);
           setConnectionStatus('connected');
         }, 500);
@@ -260,7 +257,7 @@ export function Terminal({
         term.writeln('\x1b[1;32mConnected (Demo Mode)\x1b[0m');
         term.writeln('');
         term.writeln('\x1b[1;37mType "help" for available commands\x1b[0m');
-        writePrompt(term);
+        writePrompt(term, cliRef.current.getPrompt());
         setConnected(true);
         setConnectionStatus('connected');
       }, 800);
@@ -270,31 +267,19 @@ export function Terminal({
     let currentInput = '';
     term.onData((data) => {
       // If connected to real backend, send data directly
-      if (isRealMode && wsRef.current?.isConnected) {
+      if (realModeRef.current && wsRef.current?.isConnected) {
         wsRef.current.send(data);
         return;
       }
 
       // Demo mode input handling
-      if (!connected) return;
+      if (!connectedRef.current) return;
 
       const code = data.charCodeAt(0);
 
       if (code === 13) { // Enter
         processCommand(term, currentInput);
         currentInput = '';
-      } else if (code === 9) { // Tab autocomplete
-        const suggestions = mockSessionRef.current?.autocomplete(currentInput) ?? [];
-        if (suggestions.length === 1) {
-          const currentToken = currentInput.endsWith(' ') ? '' : currentInput.split(/\s+/).pop() ?? '';
-          const insert = suggestions[0].slice(currentToken.length);
-          currentInput += insert;
-          term.write(insert);
-        } else if (suggestions.length > 1) {
-          term.writeln('');
-          term.writeln(suggestions.join('  '));
-          term.write(`\x1b[1;33m${mockSessionRef.current?.prompt ?? `${nodeName}>`}\x1b[0m ${currentInput}`);
-        }
       } else if (code === 127) { // Backspace
         if (currentInput.length > 0) {
           currentInput = currentInput.slice(0, -1);
@@ -321,7 +306,7 @@ export function Terminal({
       wsRef.current?.disconnect();
       term.dispose();
     };
-  }, [nodeName, nodeId, labPath, useRealConnection, settings.terminalFontSize, settings.terminalTheme, connected, isRealMode, processCommand, writePrompt, setupRealConnection]);
+  }, [nodeName, nodeId, labPath, useRealConnection, settings.terminalFontSize, settings.terminalTheme, processCommand, writePrompt, setupRealConnection]);
 
   const getStatusColor = () => {
     switch (connectionStatus) {
