@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId } from '../types/game';
 import { ITEM_DEFINITIONS } from '../types/game';
+import { getCareerLevelFromXp, getXpToNextCareerLevel } from '../lib/careerProgression';
 import { api } from '../services/api';
 import type { NodeUptimeStats as ServerNodeStats } from '../services/api';
 import { UptimeWebSocket, type UptimeUpdate } from '../services/websocket';
@@ -336,48 +337,6 @@ const SAMPLE_TICKETS: Ticket[] = [
   },
 ];
 
-// Calculate XP needed for next level
-function getXpToNextLevel(currentXp: number): number {
-  const levels = [
-    { level: 1, xpRequired: 0 },
-    { level: 2, xpRequired: 500 },
-    { level: 3, xpRequired: 1500 },
-    { level: 4, xpRequired: 3500 },
-    { level: 5, xpRequired: 7000 },
-    { level: 6, xpRequired: 12000 },
-    { level: 7, xpRequired: 20000 },
-    { level: 8, xpRequired: 35000 },
-  ];
-
-  for (let i = levels.length - 1; i >= 0; i--) {
-    if (currentXp >= levels[i].xpRequired) {
-      if (i === levels.length - 1) return 0; // Max level
-      return levels[i + 1].xpRequired - currentXp;
-    }
-  }
-  return levels[1].xpRequired;
-}
-
-// Get level from XP
-function getLevelFromXp(xp: number): { level: number; title: string; floor: number } {
-  const levels = [
-    { level: 1, title: 'Help Desk Tech', floor: 5, xpRequired: 0 },
-    { level: 2, title: 'Junior NetAdmin', floor: 10, xpRequired: 500 },
-    { level: 3, title: 'Network Admin', floor: 15, xpRequired: 1500 },
-    { level: 4, title: 'Senior NetAdmin', floor: 25, xpRequired: 3500 },
-    { level: 5, title: 'Network Engineer', floor: 35, xpRequired: 7000 },
-    { level: 6, title: 'Senior Engineer', floor: 40, xpRequired: 12000 },
-    { level: 7, title: 'Principal Engineer', floor: 45, xpRequired: 20000 },
-    { level: 8, title: 'CTO', floor: 50, xpRequired: 35000 },
-  ];
-
-  for (let i = levels.length - 1; i >= 0; i--) {
-    if (xp >= levels[i].xpRequired) {
-      return levels[i];
-    }
-  }
-  return levels[0];
-}
 
 export const useGameStore = create<GameState>()(
   persist(
@@ -480,7 +439,7 @@ export const useGameStore = create<GameState>()(
 
       addXp: (amount) => set((state) => {
         const newXp = state.player.xp + amount;
-        const levelInfo = getLevelFromXp(newXp);
+        const levelInfo = getCareerLevelFromXp(newXp);
         return {
           player: {
             ...state.player,
@@ -488,7 +447,7 @@ export const useGameStore = create<GameState>()(
             level: levelInfo.level,
             title: levelInfo.title,
             floor: levelInfo.floor,
-            xpToNextLevel: getXpToNextLevel(newXp),
+            xpToNextLevel: getXpToNextCareerLevel(newXp),
           }
         };
       }),
