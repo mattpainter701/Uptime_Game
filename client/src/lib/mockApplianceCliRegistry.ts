@@ -1,10 +1,15 @@
+import type { MockVendorKind, MockCliSession, ApplianceConfig } from './mockCliShared';
+import { MOCK_VENDOR_LABELS } from './mockCliShared';
 import { createCiscoCli } from './mockCiscoCli';
 import { createFortiCli } from './mockFortiCli';
 import { createArubaCli } from './mockArubaCli';
 import { createDellCli } from './mockDellCli';
 
-export type MockApplianceKind = 'cisco' | 'fortinet' | 'aruba' | 'dell';
+// Re-export shared types for consumers that still import from here
+export type MockApplianceKind = MockVendorKind;
+export { MOCK_VENDOR_LABELS as MOCK_APPLIANCE_LABELS };
 
+/** Detect which vendor style a hostname implies. */
 export function detectMockApplianceKind(hostname: string): MockApplianceKind {
   const normalized = hostname.toLowerCase();
 
@@ -23,30 +28,41 @@ export function detectMockApplianceKind(hostname: string): MockApplianceKind {
   return 'cisco';
 }
 
+/** Human-readable label for a vendor kind. */
 export function getMockApplianceLabel(hostname: string): string {
-  switch (detectMockApplianceKind(hostname)) {
+  return MOCK_VENDOR_LABELS[detectMockApplianceKind(hostname)];
+}
+
+/** Create a mock CLI session from a hostname string (backward-compatible). */
+export function createMockCliForHostname(hostname: string, overrides?: Record<string, unknown>): MockCliSession {
+  return createMockCliForVendor(detectMockApplianceKind(hostname), hostname, overrides);
+}
+
+/** Create a mock CLI session explicitly by vendor kind. */
+export function createMockCliForVendor(
+  vendor: MockApplianceKind,
+  hostname: string,
+  overrides?: Record<string, unknown>,
+): MockCliSession {
+  switch (vendor) {
     case 'fortinet':
-      return 'FortiOS';
+      return createFortiCli({ hostname, ...overrides });
     case 'aruba':
-      return 'Aruba AOS-CX';
+      return createArubaCli({ hostname, ...overrides });
     case 'dell':
-      return 'Dell OS10';
+      return createDellCli({ hostname, ...overrides });
     case 'cisco':
     default:
-      return 'Cisco IOS XE';
+      return createCiscoCli({ hostname, ...overrides });
   }
 }
 
-export function createMockCliForHostname(hostname: string) {
-  switch (detectMockApplianceKind(hostname)) {
-    case 'fortinet':
-      return createFortiCli({ hostname });
-    case 'aruba':
-      return createArubaCli({ hostname });
-    case 'dell':
-      return createDellCli({ hostname });
-    case 'cisco':
-    default:
-      return createCiscoCli({ hostname });
-  }
+/** Create a mock CLI session from an appliance config (used by ticket/lab registry). */
+export function createMockCliForAppliance(config: ApplianceConfig): MockCliSession {
+  return createMockCliForVendor(config.vendor, config.hostname, config.options as Record<string, unknown> | undefined);
+}
+
+/** Create mock CLI sessions for all appliances in a lab setup. */
+export function createMockCliForLab(appliances: ApplianceConfig[]): MockCliSession[] {
+  return appliances.map(createMockCliForAppliance);
 }
