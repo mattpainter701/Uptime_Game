@@ -217,8 +217,14 @@ class TicketHint(BaseModel):
 
 
 class ValidationCriteria(BaseModel):
-    type: str  # 'ping', 'command', 'config'
+    type: str  # 'ping', 'command', 'config', 'api'
     params: Dict[str, Any]
+    id: Optional[str] = None  # unique criterion id for reporting
+    weight: float = 1.0  # relative weight for partial scoring
+    required: bool = True  # if True, failure blocks full_pass
+    convergence_delay_ms: int = 0  # delay before checking (e.g., OSPF convergence)
+    hint_on_fail: str = ""  # hint shown when this criterion fails
+    anti_cheat: bool = False  # if True, bypassing triggers anti-cheat flag
 
 
 class Ticket(BaseModel):
@@ -245,6 +251,66 @@ class ValidationResult(BaseModel):
     success: bool
     passed: List[str] = []
     failed: List[str] = []
+    message: str = ""
+
+
+# ============================================================================
+# Validation Engine v2 Models
+# ============================================================================
+
+class ValidationCriteriaResult(BaseModel):
+    """Result of a single validation criterion."""
+    criterion_id: str
+    check_type: str  # 'ping', 'command', 'config', 'api'
+    status: str  # 'pass', 'fail', 'skipped', 'timed_out', 'error'
+    passed: bool
+    message: str = ""
+    hint: str = ""
+    duration_ms: float = 0.0
+    expected: Optional[Any] = None
+    actual: Optional[Any] = None
+    params: Dict[str, Any] = {}
+
+
+class ValidationReportModel(BaseModel):
+    """Complete validation report for a ticket."""
+    ticket_id: str
+    outcome: str  # 'full_pass', 'partial_pass', 'full_fail', 'error'
+    success: bool  # true if full_pass or partial_pass
+    total_criteria: int
+    passed_criteria: int
+    failed_criteria: int
+    score: float  # 0.0 to 1.0
+    reward_multiplier: float  # applied to base reward
+    criteria_results: List[ValidationCriteriaResult] = []
+    preflight_passed: Optional[bool] = None
+    anti_cheat_flags: List[str] = []
+    total_duration_ms: float = 0.0
+    message: str = ""
+    hints: List[str] = []
+
+
+class ValidateTicketRequest(BaseModel):
+    """Request to validate a ticket."""
+    ticket_id: str
+    validation_criteria: List[Dict[str, Any]]
+    mock_cli_state: Optional[Dict[str, Any]] = None  # for fallback mode
+    command_history: Optional[List[Dict[str, Any]]] = None
+    script: Optional[Dict[str, Any]] = None  # multi-step validation script
+
+
+class PreflightCheckRequest(BaseModel):
+    """Request to run pre-flight checks."""
+    ticket_id: str
+    lab_path: str
+    preflight_criteria: List[Dict[str, Any]]
+
+
+class PreflightCheckResponse(BaseModel):
+    """Response from pre-flight checks."""
+    passed: bool
+    lab_correctly_broken: bool
+    checks: List[ValidationCriteriaResult] = []
     message: str = ""
 
 
