@@ -5,6 +5,36 @@ export type TicketTemplateValue = string | number | boolean | null | undefined |
 
 export type TicketTemplate = Omit<Ticket, 'status'>;
 
+export const TICKET_TEMPLATE_CATEGORIES: TicketCategory[] = [
+  'network-basics',
+  'switching',
+  'routing',
+  'security',
+  'systems',
+  'automation',
+  'high-availability',
+];
+
+export const TICKET_TEMPLATE_DIFFICULTIES: Ticket['difficulty'][] = [1, 2, 3, 4, 5];
+
+export interface TicketTemplateCatalogDifficultySummary {
+  difficulty: Ticket['difficulty'];
+  count: number;
+  templateIds: string[];
+}
+
+export interface TicketTemplateCatalogCategorySummary {
+  category: TicketCategory;
+  count: number;
+  difficultySummary: TicketTemplateCatalogDifficultySummary[];
+  templateIds: string[];
+}
+
+export interface TicketTemplateCatalogSummary {
+  totalTemplates: number;
+  categories: TicketTemplateCatalogCategorySummary[];
+}
+
 export interface ProceduralTicketGeneratorOptions {
   templates: TicketTemplate[];
   random?: () => number;
@@ -148,6 +178,33 @@ export function hasTicketTemplateVariables(value: unknown): value is TicketTempl
 
 export function collectTicketTemplateIds(templates: TicketTemplate[]): string[] {
   return templates.map((template) => template.id);
+}
+
+export function createTicketTemplateCatalogSummary(templates: TicketTemplate[]): TicketTemplateCatalogSummary {
+  const categories = TICKET_TEMPLATE_CATEGORIES.map((category) => {
+    const categoryTemplates = templates.filter((template) => template.category === category);
+    const difficultySummary = TICKET_TEMPLATE_DIFFICULTIES.map((difficulty) => {
+      const difficultyTemplates = categoryTemplates.filter((template) => template.difficulty === difficulty);
+
+      return {
+        difficulty,
+        count: difficultyTemplates.length,
+        templateIds: collectTicketTemplateIds(difficultyTemplates),
+      };
+    });
+
+    return {
+      category,
+      count: categoryTemplates.length,
+      difficultySummary,
+      templateIds: collectTicketTemplateIds(categoryTemplates),
+    };
+  });
+
+  return {
+    totalTemplates: templates.length,
+    categories,
+  };
 }
 
 export function withTemplateVariables<T extends TicketTemplateValue>(value: T, variables: TicketTemplateVariables): T {
