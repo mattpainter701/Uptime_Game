@@ -3,12 +3,27 @@ export type CiscoCliMode =
   | 'config'
   | { kind: 'interface'; name: string };
 
+export type CiscoSwitchportMode = 'access' | 'trunk';
+
+export interface CiscoPingProfile {
+  sent?: number;
+  received: number;
+  minMs?: number;
+  avgMs?: number;
+  maxMs?: number;
+  pattern?: string;
+}
+
+export type CiscoPingResult = boolean | CiscoPingProfile;
+
 export interface CiscoInterfaceState {
   name: string;
   description: string;
   ipAddress: string | null;
   subnetMask: string | null;
   shutdown: boolean;
+  switchportMode?: CiscoSwitchportMode;
+  accessVlan?: number;
 }
 
 export interface CiscoStaticRoute {
@@ -20,7 +35,7 @@ export interface CiscoStaticRoute {
 export interface CiscoCliOptions {
   hostname?: string;
   version?: string;
-  pingResolver?: (target: string) => boolean;
+  pingResolver?: (target: string) => CiscoPingResult;
   interfaces?: CiscoInterfaceState[];
   vlans?: number[];
   routes?: CiscoStaticRoute[];
@@ -63,6 +78,7 @@ const DEFAULT_INTERFACES: CiscoInterfaceState[] = [
     ipAddress: '10.0.0.1',
     subnetMask: '255.255.255.0',
     shutdown: false,
+    switchportMode: 'trunk',
   },
   {
     name: 'GigabitEthernet0/2',
@@ -70,6 +86,8 @@ const DEFAULT_INTERFACES: CiscoInterfaceState[] = [
     ipAddress: null,
     subnetMask: null,
     shutdown: true,
+    switchportMode: 'access',
+    accessVlan: 1,
   },
 ];
 
@@ -105,6 +123,8 @@ const CONFIG_HELP = [
 
 const INTERFACE_HELP = [
   '  ip address <ip> <mask>  Assign interface address',
+  '  switchport mode <mode>   Set access or trunk switching mode',
+  '  switchport access vlan <id>  Set access VLAN',
   '  no shutdown             Enable the interface',
   '  shutdown                Disable the interface',
   '  description <text>      Set interface description',
@@ -170,6 +190,23 @@ function formatInterfaceLine(iface: CiscoInterfaceState): string {
   return `${iface.name.padEnd(22)} ${ipAddress.padEnd(15)} YES manual ${status.padEnd(21)} ${protocol}`;
 }
 
+function getAccessPortsByVlan(interfaces: CiscoInterfaceState[]): Map<number, string[]> {
+  const portsByVlan = new Map<number, string[]>();
+
+  for (const iface of interfaces) {
+    if (iface.switchportMode !== 'access') {
+      continue;
+    }
+
+    const vlan = iface.accessVlan ?? 1;
+    const ports = portsByVlan.get(vlan) ?? [];
+    ports.push(iface.name);
+    portsByVlan.set(vlan, ports);
+  }
+
+  return portsByVlan;
+}
+
 function formatRunningConfig(hostname: string, interfaces: CiscoInterfaceState[], routes: CiscoStaticRoute[], vlans: number[]): string[] {
   const lines: string[] = [
     'Building configuration...',
@@ -187,6 +224,12 @@ function formatRunningConfig(hostname: string, interfaces: CiscoInterfaceState[]
     }
     if (iface.ipAddress && iface.subnetMask) {
       lines.push(` ip address ${iface.ipAddress} ${iface.subnetMask}`);
+    }
+    if (iface.switchportMode) {
+      lines.push(` switchport mode ${iface.switchportMode}`);
+    }
+    if (iface.switchportMode === 'access' && iface.accessVlan) {
+      lines.push(` switchport access vlan ${iface.accessVlan}`);
     }
     lines.push(iface.shutdown ? ' shutdown' : ' no shutdown');
     lines.push('!');
@@ -206,19 +249,21 @@ function formatRunningConfig(hostname: string, interfaces: CiscoInterfaceState[]
   return lines;
 }
 
-function formatVlanBrief(vlans: Set<number>): string[] {
+function formatVlanBrief(vlans: Set<number>, interfaces: CiscoInterfaceState[]): string[] {
   const sortedVlans = Array.from(vlans).sort((left, right) => left - right);
+  const portsByVlan = getAccessPortsByVlan(interfaces);
   const lines = [
     'VLAN Name                             Status    Ports',
     '---- -------------------------------- --------- -------------------------------',
-    '1    default                          active    ',
+    `1    default                          active    ${(portsByVlan.get(1) ?? []).join(', ')}`,
   ];
 
   for (const vlan of sortedVlans) {
     if (vlan === 1) {
       continue;
     }
-    lines.push(`${String(vlan).padEnd(4)} VLAN${String(vlan).padStart(4, '0').padEnd(32)} active`);
+    const vlanName = `VLAN${String(vlan).padStart(4, '0')}`;
+    lines.push(`${String(vlan).padEnd(4)} ${vlanName.padEnd(32)} active    ${(portsByVlan.get(vlan) ?? []).join(', ')}`);
   }
 
   return lines;
@@ -270,14 +315,39 @@ function formatVersion(hostname: string, version: string): string[] {
   ];
 }
 
-function formatPing(target: string, reachable: boolean): string[] {
+function normalizePingProfile(result: CiscoPingResult): Required<CiscoPingProfile> {
+  if (result === true) {
+    return { sent: 5, received: 5, minMs: 1, avgMs: 3, maxMs: 5, pattern: '!!!!!' };
+  }
+
+  if (result === false) {
+    return { sent: 5, received: 0, minMs: 0, avgMs: 0, maxMs: 0, pattern: '.....' };
+  }
+
+  const sent = result.sent ?? 5;
+  const received = Math.max(0, Math.min(result.received, sent));
+  return {
+    sent,
+    received,
+    minMs: result.minMs ?? (received > 0 ? 1 : 0),
+    avgMs: result.avgMs ?? (received > 0 ? 3 : 0),
+    maxMs: result.maxMs ?? (received > 0 ? 5 : 0),
+    pattern: result.pattern ?? `${'!'.repeat(received)}${'.'.repeat(sent - received)}`,
+  };
+}
+
+function formatPing(target: string, result: CiscoPingResult): string[] {
+  const profile = normalizePingProfile(result);
+  const successRate = Math.round((profile.received / profile.sent) * 100);
+  const summary = profile.received > 0
+    ? `Success rate is ${successRate} percent (${profile.received}/${profile.sent}), round-trip min/avg/max = ${profile.minMs}/${profile.avgMs}/${profile.maxMs} ms`
+    : `Success rate is 0 percent (0/${profile.sent})`;
+
   return [
     'Type escape sequence to abort.',
-    `Sending 5, 100-byte ICMP Echos to ${target}, timeout is 2 seconds:`,
-    reachable ? '!!!!!' : '.....',
-    reachable
-      ? 'Success rate is 100 percent (5/5), round-trip min/avg/max = 1/3/5 ms'
-      : 'Success rate is 0 percent (0/5)',
+    `Sending ${profile.sent}, 100-byte ICMP Echos to ${target}, timeout is 2 seconds:`,
+    profile.pattern,
+    summary,
   ];
 }
 
@@ -352,6 +422,8 @@ export function createCiscoCli(options: CiscoCliOptions = {}): CiscoCliSession {
         ipAddress: null,
         subnetMask: null,
         shutdown: true,
+        switchportMode: 'access',
+        accessVlan: 1,
       };
     }
 
@@ -451,7 +523,7 @@ export function createCiscoCli(options: CiscoCliOptions = {}): CiscoCliSession {
       }
 
       if (matchesAbbreviation(lowerTokens, ['show', 'vlan', 'brief'])) {
-        return { lines: formatVlanBrief(vlans), prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
+        return { lines: formatVlanBrief(vlans, snapshot().interfaces), prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
       }
 
       if (matchesAbbreviation(lowerTokens, ['show', 'mac', 'address-table'])) {
@@ -556,6 +628,29 @@ export function createCiscoCli(options: CiscoCliOptions = {}): CiscoCliSession {
       if (matchesCommandStart(lowerTokens, ['ip', 'address']) && rawTokens.length >= 4) {
         iface.ipAddress = rawTokens[2];
         iface.subnetMask = rawTokens[3];
+        return { lines: [], prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
+      }
+
+      if (matchesCommandStart(lowerTokens, ['switchport', 'mode']) && rawTokens.length >= 3) {
+        const switchportMode = lowerTokens[2];
+        if (switchportMode !== 'access' && switchportMode !== 'trunk') {
+          return { lines: ['% Invalid switchport mode'], prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
+        }
+        iface.switchportMode = switchportMode;
+        if (switchportMode === 'access' && !iface.accessVlan) {
+          iface.accessVlan = 1;
+        }
+        return { lines: [], prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
+      }
+
+      if (matchesCommandStart(lowerTokens, ['switchport', 'access', 'vlan']) && rawTokens.length >= 4) {
+        const vlanId = Number.parseInt(rawTokens[3], 10);
+        if (!Number.isInteger(vlanId) || vlanId < 1 || vlanId > 4094) {
+          return { lines: ['% Invalid VLAN ID'], prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
+        }
+        iface.switchportMode = 'access';
+        iface.accessVlan = vlanId;
+        vlans.add(vlanId);
         return { lines: [], prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
       }
 
