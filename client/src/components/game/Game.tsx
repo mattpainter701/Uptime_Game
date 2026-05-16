@@ -23,7 +23,41 @@ function OfficeView() {
 }
 
 function SettingsPanel() {
-  const { settings, updateSettings, setView } = useGameStore();
+  const { settings, updateSettings, setView, saveGame, loadGame, exportSave, importSave, lastSavedAt } = useGameStore();
+
+  const handleExport = () => {
+    const json = exportSave();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `netops-tower-save-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e: any) => {
+      const file = e.target?.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (re) => {
+        const text = re.target?.result as string;
+        if (!text) return;
+        const success = importSave(text);
+        if (success) {
+          alert('Save imported successfully! Game state restored.');
+        } else {
+          alert('Failed to import save: invalid file format.');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
 
   return (
     <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/60 backdrop-blur-sm">
@@ -121,18 +155,73 @@ function SettingsPanel() {
 
           {/* Game data */}
           <div>
-            <h3 className="text-sm font-bold text-gray-400 mb-3">GAME DATA</h3>
-            <button
-              onClick={() => {
-                if (confirm('Are you sure? This will reset all progress.')) {
-                  localStorage.removeItem('netops-tower-save');
-                  window.location.reload();
-                }
-              }}
-              className="px-4 py-2 bg-red-500/20 border border-red-500/50 rounded text-red-400 hover:bg-red-500/30"
-            >
-              Reset Progress
-            </button>
+            <h3 className="text-sm font-bold text-gray-400 mb-3">SAVE DATA</h3>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={saveGame}
+                  className="px-4 py-2 bg-cyan-500/20 border border-cyan-500/50 rounded text-cyan-400 hover:bg-cyan-500/30 transition-all flex items-center gap-2"
+                >
+                  <span>💾</span>
+                  Save Game
+                </button>
+                <button
+                  onClick={() => {
+                    const ok = loadGame();
+                    if (ok) {
+                      alert('Game loaded successfully!');
+                    } else {
+                      alert('No save data found.');
+                    }
+                  }}
+                  className="px-4 py-2 bg-green-500/20 border border-green-500/50 rounded text-green-400 hover:bg-green-500/30 transition-all flex items-center gap-2"
+                >
+                  <span>📂</span>
+                  Load Game
+                </button>
+              </div>
+
+              {lastSavedAt && (
+                <p className="text-xs text-gray-500">
+                  Last saved: {new Date(lastSavedAt).toLocaleString()}
+                </p>
+              )}
+
+              <div className="border-t border-gray-700 pt-3 mt-3">
+                <h4 className="text-xs font-bold text-gray-500 mb-2">BACKUP</h4>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleExport}
+                    className="px-4 py-2 bg-purple-500/20 border border-purple-500/50 rounded text-purple-400 hover:bg-purple-500/30 transition-all flex items-center gap-2"
+                  >
+                    <span>📤</span>
+                    Export Save
+                  </button>
+                  <button
+                    onClick={handleImport}
+                    className="px-4 py-2 bg-orange-500/20 border border-orange-500/50 rounded text-orange-400 hover:bg-orange-500/30 transition-all flex items-center gap-2"
+                  >
+                    <span>📥</span>
+                    Import Save
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-700 pt-3 mt-3">
+                <h4 className="text-xs font-bold text-red-500/70 mb-2">DANGER ZONE</h4>
+                <button
+                  onClick={() => {
+                    if (confirm('Are you sure? This will reset all progress.')) {
+                      localStorage.removeItem('netops-tower-save');
+                      window.location.reload();
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-500/20 border border-red-500/50 rounded text-red-400 hover:bg-red-500/30"
+                >
+                  Reset Progress
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
