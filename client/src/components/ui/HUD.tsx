@@ -3,6 +3,32 @@ import { UptimeClockMini } from './UptimeClock';
 import { TicketTimerMini } from './TicketTimer';
 import { InventoryMini } from './InventoryPanel';
 
+function SaveIndicator() {
+  const lastSavedAt = useGameStore((s) => s.lastSavedAt);
+  const saveGame = useGameStore((s) => s.saveGame);
+
+  const timeAgo = lastSavedAt
+    ? (() => {
+        const diff = Math.floor((Date.now() - lastSavedAt) / 1000);
+        if (diff < 5) return 'Just now';
+        if (diff < 60) return `${diff}s ago`;
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+        return `${Math.floor(diff / 3600)}h ago`;
+      })()
+    : null;
+
+  return (
+    <button
+      onClick={saveGame}
+      className="flex items-center gap-1 text-xs text-gray-500 hover:text-cyan-400 transition-colors"
+      title={lastSavedAt ? `Last saved: ${new Date(lastSavedAt).toLocaleString()}` : 'Click to save'}
+    >
+      <span>💾</span>
+      {timeAgo && <span className="hidden sm:inline">{timeAgo}</span>}
+    </button>
+  );
+}
+
 function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
   return (
     <span className="flex gap-0.5">
@@ -127,6 +153,11 @@ export function HUD() {
               <InventoryMini />
             </div>
           </div>
+
+          <div className="w-px h-8 bg-gray-600" />
+
+          {/* Save */}
+          <SaveIndicator />
         </div>
 
         {/* Navigation */}

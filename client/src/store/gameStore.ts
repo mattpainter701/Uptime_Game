@@ -53,6 +53,9 @@ interface GameState {
   // Inventory
   inventory: Record<ItemId, number>;
 
+  // Save tracking
+  lastSavedAt: number | null;
+
   // Actions
   setView: (view: GameView) => void;
   setActiveTicket: (ticket: Ticket | null) => void;
@@ -105,6 +108,12 @@ interface GameState {
   hasItem: (itemId: ItemId, quantity?: number) => boolean;
   getItemCount: (itemId: ItemId) => number;
   hasRequiredItems: (items: ItemId[]) => boolean;
+
+  // Save/Load persistence actions
+  saveGame: () => void;
+  loadGame: () => boolean;
+  exportSave: () => string;
+  importSave: (json: string) => boolean;
 }
 
 // Sample tickets for demo
@@ -421,6 +430,8 @@ export const useGameStore = create<GameState>()(
         'usb-drive': 0,
         'crimping-tool': 0,
       },
+
+      lastSavedAt: null,
 
       // View actions
       setView: (view) => set({ currentView: view }),
@@ -826,14 +837,294 @@ export const useGameStore = create<GameState>()(
         const inventory = get().inventory;
         return items.every(itemId => (inventory[itemId] || 0) > 0);
       },
+
+      // === Save/Load Persistence Actions ===
+
+      saveGame: () => {
+        try {
+          const state = get();
+          const saveData = {
+            player: state.player,
+            settings: state.settings,
+            inventory: state.inventory,
+            activeTicket: state.activeTicket,
+            activeLab: state.activeLab,
+            availableTickets: state.availableTickets,
+            currentView: state.currentView,
+            timeOfDay: state.timeOfDay,
+            currentFloor: state.currentFloor,
+            elevatorOpen: state.elevatorOpen,
+            connectedNodeId: state.connectedNodeId,
+            playerPosition: state.playerPosition,
+            lastSavedAt: Date.now(),
+            uptime: {
+              ...state.uptime,
+              isTracking: false,
+              sessionId: null,
+            },
+            _saveVersion: 1,
+          };
+          localStorage.setItem('netops-tower-save', JSON.stringify({
+            state: saveData,
+            version: 1,
+          }));
+          set({ lastSavedAt: saveData.lastSavedAt });
+        } catch (err) {
+          console.error('Failed to save game:', err);
+        }
+      },
+
+      loadGame: () => {
+        try {
+          const raw = localStorage.getItem('netops-tower-save');
+          if (!raw) return false;
+
+          const parsed = JSON.parse(raw);
+
+          // Handle legacy Zustand persist format (just the partialized state object)
+          let savedState: any;
+          let saveVersion = 0;
+          if (parsed.state && typeof parsed.version === 'number') {
+            savedState = parsed.state;
+            saveVersion = parsed.version;
+          } else if (parsed._saveVersion) {
+            savedState = parsed;
+            saveVersion = parsed._saveVersion;
+          } else {
+            // Old Zustand format: partialize state directly stored
+            savedState = parsed;
+            saveVersion = 0;
+          }
+
+          // Edge case: expired ticket timer
+          if (savedState.activeTicket?.startedAt && savedState.activeTicket.timeLimit) {
+            const elapsed = Date.now() - savedState.activeTicket.startedAt;
+            const totalMs = savedState.activeTicket.timeLimit * 60 * 1000;
+            if (elapsed >= totalMs) {
+              // Ticket expired — fail it
+              savedState.activeTicket = null;
+              savedState.activeLab = null;
+              savedState.currentView = 'office';
+              // Apply reputation loss
+              if (savedState.player && savedState.uptime) {
+                savedState.player.reputation = Math.max(0,
+                  savedState.player.reputation - getReputationLossForFailure(savedState.uptime.totalIncidents || 0));
+              }
+              savedState.uptime = {
+                sessionId: null, isTracking: false, startedAt: null,
+                nodes: {}, totalUptimeSeconds: 0, totalDowntimeSeconds: 0,
+                uptimePercentage: 100, pointsEarned: 0, totalIncidents: 0,
+              };
+            }
+          }
+
+          // Edge case: stale uptime — always reset tracking on load
+          if (savedState.uptime) {
+            savedState.uptime = {
+              ...savedState.uptime,
+              isTracking: false,
+              sessionId: null,
+            };
+          }
+
+          // Edge case: missing lab data
+          if (!savedState.activeLab) {
+            savedState.activeLab = null;
+          }
+
+          // Migration: fill in defaults for any missing fields from old saves
+          const defaults: any = {
+            connectedNodeId: null,
+            playerPosition: { x: 0, y: 0, z: -1, rotation: 0, pose: 'seated', isMoving: false },
+            elevatorOpen: false,
+            currentFloor: 'basement',
+            timeOfDay: 14,
+            lastSavedAt: null,
+          };
+
+          for (const [key, defaultValue] of Object.entries(defaults)) {
+            if (savedState[key] === undefined) {
+              savedState[key] = defaultValue;
+            }
+          }
+
+          // Apply the loaded state
+          set({
+            player: savedState.player,
+            settings: savedState.settings,
+            inventory: savedState.inventory,
+            activeTicket: savedState.activeTicket,
+            activeLab: savedState.activeLab,
+            availableTickets: savedState.availableTickets,
+            currentView: savedState.currentView,
+            timeOfDay: savedState.timeOfDay,
+            currentFloor: savedState.currentFloor,
+            elevatorOpen: savedState.elevatorOpen,
+            connectedNodeId: savedState.connectedNodeId,
+            playerPosition: savedState.playerPosition,
+            lastSavedAt: savedState.lastSavedAt,
+            uptime: savedState.uptime || {
+              sessionId: null, isTracking: false, startedAt: null,
+              nodes: {}, totalUptimeSeconds: 0, totalDowntimeSeconds: 0,
+              uptimePercentage: 100, pointsEarned: 0, totalIncidents: 0,
+            },
+            // Always clear transient runtime state
+            uptimeWs: null,
+            ticketTimerInterval: null,
+            ticketTimeRemaining: null,
+            movement: { forward: false, backward: false, left: false, right: false },
+          });
+
+          // If a ticket was loaded, recompute timer and restart it
+          const loadedTicket = get().activeTicket;
+          if (loadedTicket?.startedAt && loadedTicket.timeLimit) {
+            const elapsed = Date.now() - loadedTicket.startedAt;
+            const totalMs = loadedTicket.timeLimit * 60 * 1000;
+            const remaining = Math.max(0, totalMs - elapsed);
+            set({ ticketTimeRemaining: remaining });
+            // Restart timer if time remains
+            if (remaining > 0 && loadedTicket.status === 'active') {
+              get().startTicketTimer();
+            }
+          }
+
+          return true;
+        } catch (err) {
+          console.error('Failed to load game:', err);
+          return false;
+        }
+      },
+
+      exportSave: () => {
+        const state = get();
+        const saveData = {
+          player: state.player,
+          settings: state.settings,
+          inventory: state.inventory,
+          activeTicket: state.activeTicket,
+          activeLab: state.activeLab,
+          availableTickets: state.availableTickets,
+          currentView: state.currentView,
+          timeOfDay: state.timeOfDay,
+          currentFloor: state.currentFloor,
+          elevatorOpen: state.elevatorOpen,
+          connectedNodeId: state.connectedNodeId,
+          playerPosition: state.playerPosition,
+          lastSavedAt: Date.now(),
+          uptime: {
+            ...state.uptime,
+            isTracking: false,
+            sessionId: null,
+          },
+          _saveVersion: 1,
+        };
+        return JSON.stringify({ state: saveData, version: 1, exportedAt: new Date().toISOString() }, null, 2);
+      },
+
+      importSave: (json: string) => {
+        try {
+          const parsed = JSON.parse(json);
+          const savedState = parsed.state || parsed;
+
+          // Validate minimal structure
+          if (!savedState.player || !savedState.settings) {
+            console.error('Invalid save file: missing required fields');
+            return false;
+          }
+
+          // Store as if it were a load
+          localStorage.setItem('netops-tower-save', JSON.stringify({
+            state: savedState,
+            version: parsed.version || 1,
+          }));
+
+          // Trigger load
+          return get().loadGame();
+        } catch (err) {
+          console.error('Failed to import save:', err);
+          return false;
+        }
+      },
     }),
     {
       name: 'netops-tower-save',
+      version: 1,
+      migrate: (persistedState: any, _version: number) => {
+        // Migration v0 → v1: old format only had player, settings, inventory
+        // Fill in defaults for all the new fields introduced in v1
+        if (_version < 1) {
+          return {
+            ...persistedState,
+            activeTicket: persistedState.activeTicket ?? null,
+            activeLab: persistedState.activeLab ?? null,
+            availableTickets: persistedState.availableTickets ?? SAMPLE_TICKETS,
+            currentView: persistedState.currentView ?? 'office',
+            timeOfDay: persistedState.timeOfDay ?? 14,
+            currentFloor: persistedState.currentFloor ?? 'basement',
+            elevatorOpen: persistedState.elevatorOpen ?? false,
+            connectedNodeId: persistedState.connectedNodeId ?? null,
+            playerPosition: persistedState.playerPosition ?? { x: 0, y: 0, z: -1, rotation: 0, pose: 'seated', isMoving: false },
+            lastSavedAt: persistedState.lastSavedAt ?? null,
+            uptime: persistedState.uptime ?? {
+              sessionId: null, isTracking: false, startedAt: null,
+              nodes: {}, totalUptimeSeconds: 0, totalDowntimeSeconds: 0,
+              uptimePercentage: 100, pointsEarned: 0, totalIncidents: 0,
+            },
+          };
+        }
+        return persistedState;
+      },
       partialize: (state) => ({
         player: state.player,
         settings: state.settings,
         inventory: state.inventory,
+        activeTicket: state.activeTicket,
+        activeLab: state.activeLab,
+        availableTickets: state.availableTickets,
+        currentView: state.currentView,
+        timeOfDay: state.timeOfDay,
+        currentFloor: state.currentFloor,
+        elevatorOpen: state.elevatorOpen,
+        connectedNodeId: state.connectedNodeId,
+        playerPosition: state.playerPosition,
+        lastSavedAt: Date.now(),
+        // Save uptime state data but mark as not-tracking (WS reconnects on load)
+        uptime: {
+          ...state.uptime,
+          isTracking: false,
+          sessionId: null,
+        },
       }),
+      onRehydrateStorage: () => {
+        return (hydratedState, error) => {
+          if (error) {
+            console.error('Failed to rehydrate game state:', error);
+            return;
+          }
+          if (!hydratedState) return;
+
+          const state = hydratedState as any;
+
+          // Edge case: expired ticket timer on rehydrate
+          if (state.activeTicket?.startedAt && state.activeTicket.timeLimit) {
+            const elapsed = Date.now() - state.activeTicket.startedAt;
+            const totalMs = state.activeTicket.timeLimit * 60 * 1000;
+            if (elapsed >= totalMs) {
+              // Ticket expired while away — fail it
+              const store = useGameStore.getState();
+              store.failTicket();
+            } else {
+              // Recompute remaining time
+              const remaining = Math.max(0, totalMs - elapsed);
+              useGameStore.setState({ ticketTimeRemaining: remaining });
+              // Restart ticker if ticket is active
+              if (state.activeTicket.status === 'active') {
+                useGameStore.getState().startTicketTimer();
+              }
+            }
+          }
+        };
+      },
     }
   )
 );
