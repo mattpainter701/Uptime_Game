@@ -46,8 +46,79 @@ export interface TicketHint {
 }
 
 export interface ValidationCriteria {
-  type: 'ping' | 'command' | 'config';
+  type: 'ping' | 'command' | 'config' | 'api';
   params: Record<string, unknown>;
+  id?: string;  // unique criterion id for reporting
+  weight?: number;  // relative weight for partial scoring
+  required?: boolean;  // if true, failure blocks full_pass
+  convergenceDelayMs?: number;  // delay before checking (e.g., OSPF convergence)
+  hintOnFail?: string;  // hint shown when this criterion fails
+  antiCheat?: boolean;  // if true, bypassing triggers anti-cheat flag
+}
+
+// Validation Engine v2 types
+
+export type CriterionStatus = 'pass' | 'fail' | 'skipped' | 'timed_out' | 'error';
+
+export interface CriterionResult {
+  criterion_id: string;
+  check_type: string;
+  status: CriterionStatus;
+  passed: boolean;
+  message: string;
+  hint: string;
+  duration_ms: number;
+  expected?: unknown;
+  actual?: unknown;
+  params: Record<string, unknown>;
+}
+
+export type ValidationOutcome = 'full_pass' | 'partial_pass' | 'full_fail' | 'error';
+
+export interface ValidationReport {
+  ticket_id: string;
+  outcome: ValidationOutcome;
+  success: boolean;
+  total_criteria: number;
+  passed_criteria: number;
+  failed_criteria: number;
+  score: number;  // 0.0 to 1.0
+  reward_multiplier: number;
+  criteria_results: CriterionResult[];
+  preflight_passed?: boolean;
+  anti_cheat_flags: string[];
+  total_duration_ms: number;
+  message: string;
+  hints: string[];
+}
+
+export interface ValidateTicketRequest {
+  ticket_id: string;
+  validation_criteria: Record<string, unknown>[];
+  mock_cli_state?: Record<string, unknown>;
+  command_history?: Record<string, unknown>[];
+  script?: Record<string, unknown>;
+}
+
+export interface PreflightCheckRequest {
+  ticket_id: string;
+  lab_path: string;
+  preflight_criteria: Record<string, unknown>[];
+}
+
+export interface PreflightCheckResponse {
+  passed: boolean;
+  lab_correctly_broken: boolean;
+  checks: CriterionResult[];
+  message: string;
+}
+
+export interface GradingConfig {
+  full_pass_threshold: number;
+  partial_pass_threshold: number;
+  partial_reward_floor: number;
+  reward_scaling: string;
+  reward_steps: Array<{ threshold: number; multiplier: number }>;
 }
 
 export interface LabNode {

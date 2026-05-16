@@ -196,6 +196,86 @@ export const uptimeApi = {
 };
 
 // ============================================================================
+// Validation API (v2)
+// ============================================================================
+
+export interface ValidateTicketRequest {
+  ticket_id: string;
+  validation_criteria: Record<string, unknown>[];
+  mock_cli_state?: Record<string, unknown>;
+  command_history?: Record<string, unknown>[];
+  script?: Record<string, unknown>;
+}
+
+export interface CriterionResult {
+  criterion_id: string;
+  check_type: string;
+  status: string;
+  passed: boolean;
+  message: string;
+  hint: string;
+  duration_ms: number;
+  expected?: unknown;
+  actual?: unknown;
+  params: Record<string, unknown>;
+}
+
+export interface ValidationReport {
+  ticket_id: string;
+  outcome: string;
+  success: boolean;
+  total_criteria: number;
+  passed_criteria: number;
+  failed_criteria: number;
+  score: number;
+  reward_multiplier: number;
+  criteria_results: CriterionResult[];
+  preflight_passed?: boolean;
+  anti_cheat_flags: string[];
+  total_duration_ms: number;
+  message: string;
+  hints: string[];
+}
+
+export interface PreflightReport {
+  passed: boolean;
+  lab_correctly_broken: boolean;
+  checks: CriterionResult[];
+  message: string;
+}
+
+export interface GradingConfig {
+  full_pass_threshold: number;
+  partial_pass_threshold: number;
+  partial_reward_floor: number;
+  reward_scaling: string;
+  reward_steps: Array<{ threshold: number; multiplier: number }>;
+}
+
+export const validationApi = {
+  validate: (req: ValidateTicketRequest) =>
+    request<ValidationReport>('/validate', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  preflight: (req: { ticket_id: string; lab_path: string; preflight_criteria: Record<string, unknown>[] }) =>
+    request<PreflightReport>('/validate/preflight', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  validateFallback: (req: ValidateTicketRequest) =>
+    request<ValidationReport>('/validate/fallback', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  getGradingConfig: () =>
+    request<GradingConfig>('/validate/grading'),
+};
+
+// ============================================================================
 // Export all APIs
 // ============================================================================
 
@@ -204,6 +284,7 @@ export const api = {
   labs: labsApi,
   nodes: nodesApi,
   uptime: uptimeApi,
+  validation: validationApi,
 };
 
 export default api;

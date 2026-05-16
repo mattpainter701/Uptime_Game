@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .services.eveng import eveng_client
 from .services.uptime_tracker import uptime_tracker
-from .routes import labs, nodes, console, status, uptime
+from .routes import labs, nodes, console, status, uptime, validation
 
 # Configure logging
 logging.basicConfig(
@@ -73,6 +73,7 @@ app.include_router(labs.router, prefix="/api")
 app.include_router(nodes.router, prefix="/api")
 app.include_router(console.router, prefix="/api")
 app.include_router(uptime.router, prefix="/api")
+app.include_router(validation.router, prefix="/api")
 
 
 @app.get("/")
