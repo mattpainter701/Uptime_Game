@@ -109,6 +109,7 @@ interface TerminalProps {
   labPath?: string;
   useRealConnection?: boolean;
   onClose?: () => void;
+  isPaused?: boolean;
 }
 
 export function Terminal({
@@ -116,7 +117,8 @@ export function Terminal({
   nodeId,
   labPath,
   useRealConnection = false,
-  onClose
+  onClose,
+  isPaused = false,
 }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -307,6 +309,19 @@ export function Terminal({
       term.dispose();
     };
   }, [nodeName, nodeId, labPath, useRealConnection, settings.terminalFontSize, settings.terminalTheme, processCommand, writePrompt, setupRealConnection]);
+
+  // Toggle xterm stdin when paused
+  useEffect(() => {
+    const term = xtermRef.current;
+    if (!term) return;
+    term.options.disableStdin = isPaused;
+    if (isPaused) {
+      term.write('\r\n\x1b[1;33m⏸ Game paused — input disabled. Press Esc or click Resume to continue.\x1b[0m\r\n');
+    } else {
+      term.write('\r\n\x1b[1;32m▶ Game resumed.\x1b[0m\r\n');
+      writePrompt(term, cliRef.current.getPrompt());
+    }
+  }, [isPaused, writePrompt]);
 
   const getStatusColor = () => {
     switch (connectionStatus) {

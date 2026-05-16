@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId } from '../types/game';
+import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId, SessionState } from '../types/game';
 import { ITEM_DEFINITIONS } from '../types/game';
 import { getCareerLevelFromXp, getXpToNextCareerLevel } from '../lib/careerProgression';
 import { getReputationLossForFailure } from '../lib/reputationProgression';
@@ -55,6 +55,9 @@ interface GameState {
 
   // Save tracking
   lastSavedAt: number | null;
+
+  // Session state (pause/resume)
+  sessionState: SessionState;
 
   // Actions
   setView: (view: GameView) => void;
@@ -114,6 +117,10 @@ interface GameState {
   loadGame: () => boolean;
   exportSave: () => string;
   importSave: (json: string) => boolean;
+
+  // Pause/Resume actions
+  pauseGame: () => void;
+  resumeGame: () => void;
 }
 
 // Sample tickets for demo
@@ -432,6 +439,12 @@ export const useGameStore = create<GameState>()(
       },
 
       lastSavedAt: null,
+
+      // Session state (not persisted — always unpaused on fresh load)
+      sessionState: {
+        isPaused: false,
+        pausedAt: null,
+      },
 
       // View actions
       setView: (view) => set({ currentView: view }),
@@ -1044,6 +1057,75 @@ export const useGameStore = create<GameState>()(
           console.error('Failed to import save:', err);
           return false;
         }
+      },
+
+      // === Pause/Resume Actions ===
+
+      pauseGame: () => {
+        const state = get();
+        // Don't double-pause
+        if (state.sessionState.isPaused) return;
+        // Only pause when there's an active ticket (in-game)
+        if (!state.activeTicket?.startedAt) return;
+
+        // Stop the ticket timer interval
+        state.stopTicketTimer();
+
+        // Adjust startedAt forward by current elapsed time so the remaining
+        // time is frozen. This makes saves during pause safe for rehydration.
+        const now = Date.now();
+        const pauseDuration = now - state.activeTicket.startedAt;
+        const adjustedTicket = {
+          ...state.activeTicket,
+          startedAt: state.activeTicket.startedAt + pauseDuration,
+        };
+        set({ activeTicket: adjustedTicket });
+
+        // Auto-save game state with adjusted ticket (safe for reloads)
+        state.saveGame();
+
+        set({
+          sessionState: {
+            isPaused: true,
+            pausedAt: now,
+          },
+        });
+
+        console.log('Game paused at', new Date().toISOString());
+      },
+
+      resumeGame: () => {
+        const state = get();
+        // Don't double-resume
+        if (!state.sessionState.isPaused || !state.sessionState.pausedAt) return;
+
+        const pauseDuration = Date.now() - state.sessionState.pausedAt;
+
+        // Adjust startedAt for the pause duration so remaining time stays correct
+        if (state.activeTicket?.startedAt) {
+          const adjustedTicket = {
+            ...state.activeTicket,
+            startedAt: state.activeTicket.startedAt + pauseDuration,
+          };
+          set({ activeTicket: adjustedTicket });
+        }
+
+        // Clear paused state
+        set({
+          sessionState: {
+            isPaused: false,
+            pausedAt: null,
+          },
+        });
+
+        // Restart the ticket timer
+        if (state.activeTicket?.startedAt) {
+          get().startTicketTimer();
+          // Save adjusted state
+          get().saveGame();
+        }
+
+        console.log('Game resumed, pause duration:', (pauseDuration / 1000).toFixed(1), 's');
       },
     }),
     {

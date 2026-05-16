@@ -1,3 +1,4 @@
+import { useEffect, useCallback } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { GameCanvas } from '../scene/GameCanvas';
 import { HUD } from '../ui/HUD';
@@ -303,12 +304,90 @@ function ShopPanel() {
   );
 }
 
+// Pause overlay — full-screen dark overlay with "PAUSED" text and Resume button
+function PauseOverlay() {
+  const resumeGame = useGameStore((state) => state.resumeGame);
+
+  return (
+    <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center">
+      <div className="text-center space-y-8">
+        {/* Paused icon */}
+        <div className="text-8xl animate-pulse">⏸️</div>
+
+        {/* Title */}
+        <h1 className="text-5xl font-bold text-white tracking-widest select-none">
+          PAUSED
+        </h1>
+
+        {/* Subtitle */}
+        <p className="text-gray-400 text-lg">
+          Press <kbd className="px-2 py-1 bg-white/10 border border-gray-600 rounded text-white font-mono">Esc</kbd> or click Resume to continue
+        </p>
+
+        {/* Resume button */}
+        <button
+          onClick={resumeGame}
+          className="mt-4 px-8 py-3 bg-cyan-500/30 border border-cyan-500 rounded-lg text-cyan-400 text-xl font-bold hover:bg-cyan-500/50 transition-all hover:scale-105 active:scale-95"
+        >
+          ▶ Resume
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Game() {
   const currentView = useGameStore((state) => state.currentView);
   const elevatorOpen = useGameStore((state) => state.elevatorOpen);
   const currentFloor = useGameStore((state) => state.currentFloor);
   const setCurrentFloor = useGameStore((state) => state.setCurrentFloor);
   const closeElevator = useGameStore((state) => state.closeElevator);
+  const isPaused = useGameStore((state) => state.sessionState.isPaused);
+  const activeTicket = useGameStore((state) => state.activeTicket);
+  const pauseGame = useGameStore((state) => state.pauseGame);
+  const resumeGame = useGameStore((state) => state.resumeGame);
+
+  // Escape key handler — toggles pause when in-game (terminal/office views with active ticket)
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      // Don't toggle pause in menus (settings, shop, tickets)
+      const menuViews: string[] = ['settings', 'shop', 'tickets'];
+      const isInMenu = menuViews.includes(useGameStore.getState().currentView);
+      if (isInMenu) return;
+
+      // Toggle pause
+      const { sessionState, pauseGame, resumeGame } = useGameStore.getState();
+      if (sessionState.isPaused) {
+        resumeGame();
+      } else {
+        pauseGame();
+      }
+    }
+  }, []);
+
+  // Auto-pause on tab blur (visibilitychange)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab lost focus — auto-pause if in-game
+        const state = useGameStore.getState();
+        const menuViews: string[] = ['settings', 'shop', 'tickets'];
+        const isInMenu = menuViews.includes(state.currentView);
+        if (!isInMenu && state.activeTicket && !state.sessionState.isPaused) {
+          state.pauseGame();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  // Register/unregister Escape key handler
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
 
   return (
     <div className="w-full h-full relative">
@@ -329,6 +408,9 @@ export function Game() {
         onSelectFloor={setCurrentFloor}
         onClose={closeElevator}
       />
+
+      {/* Pause overlay — renders on top of everything when paused */}
+      {isPaused && <PauseOverlay />}
     </div>
   );
 }
