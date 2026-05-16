@@ -279,5 +279,11 @@ export const ITEM_DEFINITIONS: Record<ItemId, InventoryItem> = {
   },
 };
 
+// Session state (pause/resume system)
+export interface SessionState {
+  isPaused: boolean;
+  pausedAt: number | null; // timestamp when pause started
+}
+
 // Career progression
 export { CAREER_LEVELS } from '../lib/careerProgression';

@@ -39,11 +39,13 @@ function TopologyView() {
 function NodeList({
   nodes,
   activeNode,
-  onSelectNode
+  onSelectNode,
+  disabled,
 }: {
   nodes: typeof DEMO_NODES;
   activeNode: number | null;
   onSelectNode: (id: number) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -52,10 +54,13 @@ function NodeList({
         <button
           key={node.id}
           onClick={() => onSelectNode(node.id)}
+          disabled={disabled}
           className={`w-full flex items-center gap-3 p-2 rounded transition-all ${
-            activeNode === node.id
-              ? 'bg-cyan-500/30 border border-cyan-500'
-              : 'bg-black/20 border border-transparent hover:bg-white/10'
+            disabled
+              ? 'cursor-not-allowed opacity-50'
+              : activeNode === node.id
+                ? 'bg-cyan-500/30 border border-cyan-500'
+                : 'bg-black/20 border border-transparent hover:bg-white/10'
           }`}
         >
           <span className={`w-2 h-2 rounded-full ${
@@ -70,7 +75,8 @@ function NodeList({
 }
 
 function TicketDetails() {
-  const { activeTicket, revealHint, player, completeTicket, failTicket } = useGameStore();
+  const { activeTicket, revealHint, player, completeTicket, failTicket, sessionState } = useGameStore();
+  const isPaused = sessionState.isPaused;
 
   if (!activeTicket) {
     return (
@@ -104,9 +110,9 @@ function TicketDetails() {
               ) : (
                 <button
                   onClick={() => revealHint(i)}
-                  disabled={player.credits < hint.cost}
+                  disabled={player.credits < hint.cost || isPaused}
                   className={`flex-1 text-sm p-2 rounded border ${
-                    player.credits >= hint.cost
+                    player.credits >= hint.cost && !isPaused
                       ? 'bg-white/5 border-gray-600 hover:bg-white/10 text-gray-300'
                       : 'bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed'
                   }`}
@@ -122,13 +128,23 @@ function TicketDetails() {
       <div className="border-t border-gray-700 pt-4 flex gap-2">
         <button
           onClick={completeTicket}
-          className="flex-1 py-2 bg-green-500/30 border border-green-500 rounded text-green-400 hover:bg-green-500/50 font-bold"
+          disabled={isPaused}
+          className={`flex-1 py-2 rounded font-bold ${
+            isPaused
+              ? 'bg-gray-700 border border-gray-600 text-gray-500 cursor-not-allowed'
+              : 'bg-green-500/30 border border-green-500 text-green-400 hover:bg-green-500/50'
+          }`}
         >
           Submit Solution
         </button>
         <button
           onClick={failTicket}
-          className="px-4 py-2 bg-red-500/20 border border-red-500/50 rounded text-red-400 hover:bg-red-500/30"
+          disabled={isPaused}
+          className={`px-4 py-2 rounded ${
+            isPaused
+              ? 'bg-gray-700 border border-gray-600 text-gray-500 cursor-not-allowed'
+              : 'bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500/30'
+          }`}
         >
           Abandon
         </button>
@@ -137,10 +153,32 @@ function TicketDetails() {
   );
 }
 
+// Pause banner shown at top of terminal view
+function PauseBanner() {
+  const resumeGame = useGameStore((state) => state.resumeGame);
+
+  return (
+    <div className="flex items-center justify-between px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/30 text-yellow-300">
+      <div className="flex items-center gap-3">
+        <span className="text-lg">⏸️</span>
+        <span className="font-bold text-sm tracking-wider">GAME PAUSED</span>
+        <span className="text-xs text-yellow-500/60">— Terminal input disabled</span>
+      </div>
+      <button
+        onClick={resumeGame}
+        className="px-3 py-1 bg-yellow-500/20 border border-yellow-500/40 rounded text-yellow-300 text-sm hover:bg-yellow-500/30 transition-all"
+      >
+        ▶ Resume
+      </button>
+    </div>
+  );
+}
+
 export function TerminalView() {
-  const { setView, activeTicket } = useGameStore();
+  const { setView, activeTicket, sessionState } = useGameStore();
   const [activeNode, setActiveNode] = useState<number | null>(1);
   const activeNodeData = DEMO_NODES.find(n => n.id === activeNode);
+  const isPaused = sessionState.isPaused;
 
   return (
     <div className="absolute inset-0 flex z-20 bg-[#0a0a15]">
@@ -148,8 +186,11 @@ export function TerminalView() {
       <div className="w-64 flex flex-col border-r border-gray-800 bg-[#0d0d1a]">
         <div className="p-4 border-b border-gray-800">
           <button
-            onClick={() => setView('office')}
-            className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+            onClick={() => !isPaused && setView('office')}
+            disabled={isPaused}
+            className={`flex items-center gap-2 transition-colors ${
+              isPaused ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white'
+            }`}
           >
             <span>←</span>
             <span>Back to Office</span>
@@ -162,25 +203,32 @@ export function TerminalView() {
             nodes={DEMO_NODES}
             activeNode={activeNode}
             onSelectNode={setActiveNode}
+            disabled={isPaused}
           />
         </div>
       </div>
 
       {/* Center - Terminal */}
-      <div className="flex-1 flex flex-col p-4">
-        {activeNode && activeNodeData ? (
-          <Terminal
-            nodeName={activeNodeData.name}
-            onClose={() => setActiveNode(null)}
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-400">
-            <div className="text-center">
-              <p className="text-xl mb-2">Select a node to connect</p>
-              <p className="text-sm">Choose from the node list on the left</p>
+      <div className="flex-1 flex flex-col">
+        {/* Pause banner */}
+        {isPaused && <PauseBanner />}
+
+        <div className="flex-1 flex flex-col p-4">
+          {activeNode && activeNodeData ? (
+            <Terminal
+              nodeName={activeNodeData.name}
+              onClose={() => setActiveNode(null)}
+              isPaused={isPaused}
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-gray-400">
+              <div className="text-center">
+                <p className="text-xl mb-2">Select a node to connect</p>
+                <p className="text-sm">Choose from the node list on the left</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Right panel - Ticket details */}
