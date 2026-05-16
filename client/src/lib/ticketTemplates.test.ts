@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createProceduralTicketGenerator, instantiateTicketTemplate } from './ticketTemplates';
+import { createProceduralTicketGenerator, createTicketTemplateCatalogSummary, instantiateTicketTemplate } from './ticketTemplates';
 import type { TicketTemplate } from './ticketTemplates';
 
 const routingTemplate: TicketTemplate = {
@@ -179,5 +179,32 @@ describe('ticketTemplates', () => {
 
     expect(ticket.difficulty).toBe(3);
     expect(ticket.id.startsWith('ROUTING-OSPF')).toBe(true);
+  });
+
+  it('summarizes the catalog by category and difficulty for UI-friendly browsing', () => {
+    const summary = createTicketTemplateCatalogSummary([
+      routingTemplate,
+      fallbackTemplate,
+      routingFallbackTemplate,
+    ]);
+
+    expect(summary.totalTemplates).toBe(3);
+    expect(summary.categories).toHaveLength(7);
+
+    const routingSummary = summary.categories.find((entry) => entry.category === 'routing');
+    expect(routingSummary).toBeDefined();
+    expect(routingSummary?.count).toBe(2);
+    expect(routingSummary?.templateIds).toEqual(['ROUTING-OSPF', 'ROUTING-BGP']);
+    expect(routingSummary?.difficultySummary).toEqual([
+      { difficulty: 1, count: 0, templateIds: [] },
+      { difficulty: 2, count: 0, templateIds: [] },
+      { difficulty: 3, count: 1, templateIds: ['ROUTING-OSPF'] },
+      { difficulty: 4, count: 1, templateIds: ['ROUTING-BGP'] },
+      { difficulty: 5, count: 0, templateIds: [] },
+    ]);
+
+    const automationSummary = summary.categories.find((entry) => entry.category === 'automation');
+    expect(automationSummary?.count).toBe(0);
+    expect(automationSummary?.difficultySummary.every((entry) => entry.count === 0)).toBe(true);
   });
 });
