@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId } from '../types/game';
 import { ITEM_DEFINITIONS } from '../types/game';
 import { getCareerLevelFromXp, getXpToNextCareerLevel } from '../lib/careerProgression';
+import { getReputationLossForFailure } from '../lib/reputationProgression';
 import { api } from '../services/api';
 import type { NodeUptimeStats as ServerNodeStats } from '../services/api';
 import { UptimeWebSocket, type UptimeUpdate } from '../services/websocket';
@@ -543,7 +544,10 @@ export const useGameStore = create<GameState>()(
             activeTicket: null,
             activeLab: null,
             currentView: 'office',
-            player: { ...state.player, reputation: Math.max(0, state.player.reputation - 5) },
+            player: {
+              ...state.player,
+              reputation: Math.max(0, state.player.reputation - getReputationLossForFailure(state.uptime.totalIncidents)),
+            },
             uptime: {
               sessionId: null,
               isTracking: false,
