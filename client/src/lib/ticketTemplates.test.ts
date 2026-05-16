@@ -56,6 +56,33 @@ const fallbackTemplate: TicketTemplate = {
   consumeItems: ['patch-cable'],
 };
 
+const routingFallbackTemplate: TicketTemplate = {
+  id: 'ROUTING-BGP',
+  title: 'Restore BGP peering on {{site}} edge',
+  description: 'The edge router at {{site}} is only reaching Active state.',
+  category: 'routing',
+  difficulty: 4,
+  timeLimit: 25,
+  rewardCredits: 420,
+  rewardXp: 210,
+  labTemplate: 'bgp_{{site}}',
+  hints: [
+    { cost: 90, text: 'Compare {{peerA}} and {{peerB}} neighbor states', revealed: false },
+  ],
+  validation: [
+    {
+      type: 'command',
+      params: {
+        node: '{{peerA}}',
+        command: 'show ip bgp summary',
+        contains: ['Established'],
+      },
+    },
+  ],
+  requiredItems: ['laptop', 'console-cable'],
+  consumeItems: undefined,
+};
+
 describe('ticketTemplates', () => {
   it('instantiates reusable ticket templates with recursive placeholder substitution', () => {
     const ticket = instantiateTicketTemplate(routingTemplate, {
@@ -110,5 +137,47 @@ describe('ticketTemplates', () => {
     expect(first.category).toBe('routing');
     expect(first.difficulty).toBe(3);
     expect(first.hints[0].text).toContain('R1');
+  });
+
+  it('prefers the closest difficulty when an exact category match is unavailable', () => {
+    const generator = createProceduralTicketGenerator({
+      templates: [fallbackTemplate, routingFallbackTemplate],
+      random: () => 0,
+    });
+
+    const ticket = generator.generateTicket({
+      category: 'routing',
+      difficulty: 5,
+      variables: {
+        site: 'HQ',
+        peerA: 'R1',
+        peerB: 'R2',
+      },
+    });
+
+    expect(ticket.id.startsWith('ROUTING-BGP')).toBe(true);
+    expect(ticket.difficulty).toBe(4);
+    expect(ticket.title).toBe('Restore BGP peering on HQ edge');
+  });
+
+  it('falls back to the closest difficulty across all templates when no exact difficulty exists', () => {
+    const generator = createProceduralTicketGenerator({
+      templates: [routingTemplate, fallbackTemplate],
+      random: () => 0,
+    });
+
+    const ticket = generator.generateTicket({
+      difficulty: 5,
+      variables: {
+        site: 'HQ',
+        leftRouter: 'R1',
+        rightRouter: 'R2',
+        host: 'WS-01',
+        port: 'Gi1/0/24',
+      },
+    });
+
+    expect(ticket.difficulty).toBe(3);
+    expect(ticket.id.startsWith('ROUTING-OSPF')).toBe(true);
   });
 });

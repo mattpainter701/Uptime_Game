@@ -22,6 +22,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function selectClosestDifficultyTemplates(templates: TicketTemplate[], difficulty: Ticket['difficulty']): TicketTemplate[] {
+  let closestDistance = Number.POSITIVE_INFINITY;
+  let closestTemplates: TicketTemplate[] = [];
+
+  for (const template of templates) {
+    const distance = Math.abs(template.difficulty - difficulty);
+
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestTemplates = [template];
+      continue;
+    }
+
+    if (distance === closestDistance) {
+      closestTemplates.push(template);
+    }
+  }
+
+  return closestTemplates;
+}
+
 export function substituteTemplateString(source: string, variables: TicketTemplateVariables): string {
   return source.replace(PLACEHOLDER_PATTERN, (_, key: string) => {
     const replacement = variables[key];
@@ -70,6 +91,11 @@ function selectMatchingTemplates(templates: TicketTemplate[], request: GenerateT
     if (exactMatches.length > 0) {
       return exactMatches;
     }
+
+    const categoryMatches = templates.filter((template) => template.category === category);
+    if (categoryMatches.length > 0) {
+      return selectClosestDifficultyTemplates(categoryMatches, difficulty);
+    }
   }
 
   if (category !== undefined) {
@@ -84,6 +110,8 @@ function selectMatchingTemplates(templates: TicketTemplate[], request: GenerateT
     if (difficultyMatches.length > 0) {
       return difficultyMatches;
     }
+
+    return selectClosestDifficultyTemplates(templates, difficulty);
   }
 
   return templates;
