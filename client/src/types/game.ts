@@ -209,13 +209,4 @@ export const ITEM_DEFINITIONS: Record<ItemId, InventoryItem> = {
 };
 
 // Career progression
-export const CAREER_LEVELS = [
-  { level: 1, title: 'Help Desk Tech', floor: 5, xpRequired: 0 },
-  { level: 2, title: 'Junior NetAdmin', floor: 10, xpRequired: 500 },
-  { level: 3, title: 'Network Admin', floor: 15, xpRequired: 1500 },
-  { level: 4, title: 'Senior NetAdmin', floor: 25, xpRequired: 3500 },
-  { level: 5, title: 'Network Engineer', floor: 35, xpRequired: 7000 },
-  { level: 6, title: 'Senior Engineer', floor: 40, xpRequired: 12000 },
-  { level: 7, title: 'Principal Engineer', floor: 45, xpRequired: 20000 },
-  { level: 8, title: 'CTO', floor: 50, xpRequired: 35000 },
-] as const;
+export { CAREER_LEVELS } from '../lib/careerProgression';
