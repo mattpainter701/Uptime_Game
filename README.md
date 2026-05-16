@@ -134,6 +134,7 @@ uvicorn app.main:app --reload --port 8000
 ### Terminal
 - Full terminal emulation via xterm.js
 - WebSocket connection to EVE-NG nodes
+- Cisco IOS-style mock CLI for offline practice, including `show version`, `show running-config`, `show ip interface brief`, `show ip route`, `show vlan brief`, `show mac address-table`, `show cdp neighbors`, `show ip ospf neighbor`, `show ip bgp summary`, config-mode `hostname`/`interface`/`ip route`/`vlan`/`switchport`, and configurable `ping` results
 - Telnet protocol support with NAWS
 - SSH support (with asyncssh)
 - Multiple terminal themes (cyberpunk, dark, light)
