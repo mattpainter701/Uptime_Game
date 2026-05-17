@@ -1,0 +1,122 @@
+version: "3.8"
+
+# NetOps Tower — Docker Compose Development Environment
+#
+# Usage:
+#   docker compose up -d              # start all services
+#   docker compose up backend          # backend only
+#   docker compose up frontend         # frontend only
+#   docker compose down               # tear down
+#   docker compose logs -f backend    # tail backend logs
+
+services:
+  # =========================================================================
+  # Backend — Python FastAPI server
+  # =========================================================================
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: netops-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - EVENG_HOST=${EVENG_HOST:-192.168.1.100}
+      - EVENG_USERNAME=${EVENG_USERNAME:-admin}
+      - EVENG_PASSWORD=${EVENG_PASSWORD:-eve}
+      - EVENG_PROTOCOL=${EVENG_PROTOCOL:-https}
+      - EVENG_VERIFY_SSL=${EVENG_VERIFY_SSL:-false}
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      - REDIS_URL=redis://redis:6379
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./server:/app
+      - /app/__pycache__
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/status/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # =========================================================================
+  # Frontend — Vite + React dev server
+  # =========================================================================
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: netops-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://backend:8000/api
+      - VITE_WS_URL=ws://backend:8000/api
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================================================================
+  # Redis — session cache and pub/sub
+  # =========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: netops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # =========================================================================
+  # Test runner — backend (pytest)
+  # =========================================================================
+  test-backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: netops-test-backend
+    command: ["pytest", "tests/", "-v", "--tb=short"]
+    environment:
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./server:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - test
+
+  # =========================================================================
+  # Test runner — frontend (Vitest)
+  # =========================================================================
+  test-frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      target: test
+    container_name: netops-test-frontend
+    command: ["npx", "vitest", "run"]
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    profiles:
+      - test
+
+volumes:
+  redis_data:
