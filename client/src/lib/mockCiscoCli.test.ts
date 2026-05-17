@@ -62,6 +62,8 @@ describe('createCiscoCli', () => {
     expect(cli.run('show version').lines.join('\n')).toContain('Cisco IOS XE Software');
     expect(cli.run('show running-config').lines.join('\n')).toContain('hostname CORE1');
     expect(cli.run('show ip interface brief').lines.join('\n')).toContain('GigabitEthernet0/0');
+    expect(cli.run('show interfaces status').lines.join('\n')).toContain('Port                 Name               Status       Vlan');
+    expect(cli.run('show int status').lines.join('\n')).toContain('GigabitEthernet0/1');
     expect(cli.run('show ip route').lines.join('\n')).toContain('Codes: C - connected, S - static');
     expect(cli.run('show vlan brief').lines.join('\n')).toContain('default');
     expect(cli.run('show mac address-table').lines.join('\n')).toContain('Mac Address Table');

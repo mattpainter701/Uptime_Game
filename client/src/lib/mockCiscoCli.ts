@@ -104,6 +104,7 @@ const SHOW_HELP = [
   '  version                 Display software version',
   '  running-config          Display active configuration',
   '  ip interface brief      Display interface summary',
+  '  interfaces status       Display switchport/admin status summary',
   '  ip route                Display routing table',
   '  vlan brief              Display VLAN summary',
   '  mac address-table       Display learned MAC addresses',
@@ -278,6 +279,21 @@ function formatMacTable(): string[] {
     '1       0011.2233.4455    DYNAMIC     GigabitEthernet0/0',
     '10      00aa.bbcc.ddee    DYNAMIC     GigabitEthernet0/1',
   ];
+}
+
+function formatInterfacesStatus(interfaces: CiscoInterfaceState[]): string[] {
+  const lines = [
+    'Port                 Name               Status       Vlan       Duplex  Speed Type',
+  ];
+
+  for (const iface of interfaces.sort((left, right) => left.name.localeCompare(right.name))) {
+    const name = (iface.description || '').slice(0, 18).padEnd(18);
+    const status = (iface.shutdown ? 'disabled' : 'connected').padEnd(12);
+    const vlan = (iface.switchportMode === 'trunk' ? 'trunk' : String(iface.accessVlan ?? 1)).padEnd(10);
+    lines.push(`${iface.name.padEnd(20)} ${name} ${status} ${vlan} a-full  a-1000 10/100/1000BaseTX`);
+  }
+
+  return lines;
 }
 
 function formatCdpNeighbors(): string[] {
@@ -502,6 +518,10 @@ export function createCiscoCli(options: CiscoCliOptions = {}): CiscoCliSession {
 
       if (matchesAbbreviation(lowerTokens, ['show', 'ip', 'interface', 'brief']) || matchesAbbreviation(lowerTokens, ['show', 'ip', 'int', 'bri'])) {
         return { lines: ['Interface              IP-Address      OK? Method Status                Protocol', ...Object.values(interfaces).sort((left, right) => left.name.localeCompare(right.name)).map(formatInterfaceLine)], prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
+      }
+
+      if (matchesAbbreviation(lowerTokens, ['show', 'interfaces', 'status']) || matchesAbbreviation(lowerTokens, ['show', 'int', 'status'])) {
+        return { lines: formatInterfacesStatus(snapshot().interfaces), prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
       }
 
       if (matchesAbbreviation(lowerTokens, ['show', 'ip', 'route'])) {
