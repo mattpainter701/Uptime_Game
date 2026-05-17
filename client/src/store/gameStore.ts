@@ -1072,9 +1072,9 @@ export const useGameStore = create<GameState>()(
             isTracking: false,
             sessionId: null,
           },
-          _saveVersion: 1,
+          _saveVersion: 2,
         };
-        return JSON.stringify({ state: saveData, version: 1, exportedAt: new Date().toISOString() }, null, 2);
+        return JSON.stringify({ state: saveData, version: 2, exportedAt: new Date().toISOString() }, null, 2);
       },
 
       importSave: (json: string) => {

@@ -167,8 +167,9 @@ export interface GameSettings {
   enforceTimeLimits: boolean;
 
   // Terminal
-  terminalTheme: 'dark' | 'light' | 'cyberpunk';
+  terminalTheme: 'dark' | 'light' | 'cyberpunk' | 'amber-retro' | 'solarized-dark';
   terminalFontSize: number;
+  terminalFontFamily: 'jetbrains' | 'fira' | 'source' | 'ibm' | 'ubuntu';
   terminalOpacity: number; // 0-1
   terminalBlinkCursor: boolean;
   terminalScrollback: number; // 500-5000
@@ -197,6 +198,7 @@ export const SETTINGS_PRESETS: Record<SettingsPreset, GameSettings> = {
     enforceTimeLimits: false,
     terminalTheme: 'dark',
     terminalFontSize: 14,
+    terminalFontFamily: 'jetbrains',
     terminalOpacity: 0.85,
     terminalBlinkCursor: false,
     terminalScrollback: 1000,
@@ -220,6 +222,7 @@ export const SETTINGS_PRESETS: Record<SettingsPreset, GameSettings> = {
     enforceTimeLimits: true,
     terminalTheme: 'cyberpunk',
     terminalFontSize: 14,
+    terminalFontFamily: 'jetbrains',
     terminalOpacity: 0.9,
     terminalBlinkCursor: true,
     terminalScrollback: 2000,
@@ -243,6 +246,7 @@ export const SETTINGS_PRESETS: Record<SettingsPreset, GameSettings> = {
     enforceTimeLimits: true,
     terminalTheme: 'cyberpunk',
     terminalFontSize: 16,
+    terminalFontFamily: 'jetbrains',
     terminalOpacity: 0.95,
     terminalBlinkCursor: true,
     terminalScrollback: 3000,
@@ -268,6 +272,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   enforceTimeLimits: true,
   terminalTheme: 'cyberpunk',
   terminalFontSize: 14,
+  terminalFontFamily: 'jetbrains',
   terminalOpacity: 0.9,
   terminalBlinkCursor: true,
   terminalScrollback: 2000,
