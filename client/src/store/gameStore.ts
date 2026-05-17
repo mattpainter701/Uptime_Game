@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId, SessionState, SettingsPreset } from '../types/game';
+import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId, SessionState, SettingsPreset, TicketSla, SlaTier } from '../types/game';
 import { ITEM_DEFINITIONS, DEFAULT_SETTINGS, SETTINGS_PRESETS } from '../types/game';
 import { getCareerLevelFromXp, getXpToNextCareerLevel } from '../lib/careerProgression';
 import { getReputationLossForFailure } from '../lib/reputationProgression';
 import { api } from '../services/api';
 import type { NodeUptimeStats as ServerNodeStats } from '../services/api';
 import { UptimeWebSocket, type UptimeUpdate } from '../services/websocket';
+import { getTicketEngine, calculateTimePressure, type TimePressureResult } from '../lib/ticketEngine';
 
 interface GameState {
   // Player state
@@ -76,6 +77,7 @@ interface GameState {
   completeTicket: () => void;
   failTicket: () => void;
   revealHint: (hintIndex: number) => void;
+  refreshAvailableTickets: (count?: number) => void;
 
   // Uptime actions
   startUptimeTracking: (labPath: string, nodeIds: number[]) => Promise<void>;
@@ -127,236 +129,19 @@ interface GameState {
   resumeGame: () => void;
 }
 
-// Sample tickets for demo
-const SAMPLE_TICKETS: Ticket[] = [
-  // === TIER 1: Basic / Entry Level ===
-  {
-    id: 'NET-001',
-    title: 'PC1 Not Getting IP Address',
-    description: 'PC1 in the Sales department is showing a 169.254.x.x address. The user reports they cannot access any network resources. The PC should be getting an IP via DHCP from the server at 10.0.1.5. Configure PC1 to use DHCP and verify connectivity.',
-    category: 'network-basics',
-    difficulty: 1,
-    timeLimit: 8,
-    rewardCredits: 75,
-    rewardXp: 40,
-    labTemplate: 'dhcp_client_config',
-    hints: [
-      { cost: 15, text: 'Check if the network adapter is set to DHCP or static', revealed: false },
-      { cost: 30, text: 'On Linux: check /etc/network/interfaces or use dhclient', revealed: false },
-    ],
-    validation: [
-      { type: 'ping', params: { source: 'PC1', destination: '10.0.1.1', successRate: 100 } },
-    ],
-    status: 'available',
-    requiredItems: ['laptop'],
-  },
-  {
-    id: 'NET-002',
-    title: 'Missing Default Route on R1',
-    description: 'Branch office R1 has lost internet connectivity. Internal routing is working but traffic destined for external networks (0.0.0.0/0) is being dropped. The ISP gateway is 203.0.113.1 on interface GigabitEthernet0/1. Add the missing default route.',
-    category: 'routing',
-    difficulty: 1,
-    timeLimit: 10,
-    rewardCredits: 100,
-    rewardXp: 50,
-    labTemplate: 'default_route_missing',
-    hints: [
-      { cost: 20, text: "Use 'show ip route' to see current routing table", revealed: false },
-      { cost: 40, text: 'Command: ip route 0.0.0.0 0.0.0.0 <next-hop>', revealed: false },
-    ],
-    validation: [
-      { type: 'ping', params: { source: 'R1', destination: '8.8.8.8', successRate: 100 } },
-      { type: 'command', params: { node: 'R1', command: 'show ip route', contains: ['0.0.0.0/0', '203.0.113.1'] } },
-    ],
-    status: 'available',
-    requiredItems: ['laptop', 'console-cable'],
-  },
-  {
-    id: 'NET-003',
-    title: 'Wrong DNS Breaking Web Access',
-    description: 'Users on VLAN 10 can ping 8.8.8.8 but cannot browse websites. Investigation shows the DHCP server is handing out 10.0.1.99 as DNS, but that server was decommissioned. Update DHCP pool "VLAN10-POOL" to use DNS servers 10.0.1.5 and 8.8.8.8.',
-    category: 'network-basics',
-    difficulty: 1,
-    timeLimit: 10,
-    rewardCredits: 100,
-    rewardXp: 50,
-    labTemplate: 'dhcp_dns_fix',
-    hints: [
-      { cost: 25, text: "Check DHCP pool config with 'show ip dhcp pool'", revealed: false },
-      { cost: 50, text: 'Use: ip dhcp pool VLAN10-POOL, then dns-server 10.0.1.5 8.8.8.8', revealed: false },
-    ],
-    validation: [
-      { type: 'command', params: { node: 'R1', command: 'show ip dhcp pool', contains: ['10.0.1.5', '8.8.8.8'] } },
-    ],
-    status: 'available',
-  },
-
-  // === TIER 2: Intermediate ===
-  {
-    id: 'NET-015',
-    title: 'New PC Not on Correct VLAN',
-    description: 'A new workstation PC3 was connected to port Gi0/5 on SW1, but it cannot reach other devices in VLAN 20 (Engineering). The port is currently in VLAN 1 (default). Configure the switchport as an access port in VLAN 20. You will need a patch cable to connect the new PC.',
-    category: 'switching',
-    difficulty: 2,
-    timeLimit: 12,
-    rewardCredits: 150,
-    rewardXp: 75,
-    labTemplate: 'vlan_access_port',
-    hints: [
-      { cost: 35, text: "Use 'show vlan brief' and 'show interface Gi0/5 switchport'", revealed: false },
-      { cost: 60, text: 'Commands: switchport mode access, switchport access vlan 20', revealed: false },
-    ],
-    validation: [
-      { type: 'ping', params: { source: 'PC3', destination: '10.20.0.1', successRate: 100 } },
-      { type: 'command', params: { node: 'SW1', command: 'show vlan brief', contains: ['Gi0/5', '20'] } },
-    ],
-    status: 'available',
-    requiredItems: ['laptop', 'console-cable', 'patch-cable'],
-    consumeItems: ['patch-cable'],
-  },
-  {
-    id: 'NET-018',
-    title: 'Trunk Port Blocking VLAN Traffic',
-    description: 'After a maintenance window, VLAN 30 (Voice) traffic is not passing between SW1 and SW2. Other VLANs work fine. The trunk link on Gi0/24 appears to be filtering VLAN 30. Fix the allowed VLAN list on the trunk.',
-    category: 'switching',
-    difficulty: 2,
-    timeLimit: 15,
-    rewardCredits: 200,
-    rewardXp: 100,
-    labTemplate: 'trunk_vlan_allowed',
-    hints: [
-      { cost: 40, text: "Check 'show interface Gi0/24 trunk' for allowed VLANs", revealed: false },
-      { cost: 70, text: 'Use: switchport trunk allowed vlan add 30', revealed: false },
-    ],
-    validation: [
-      { type: 'command', params: { node: 'SW1', command: 'show interface Gi0/24 trunk', contains: ['30'] } },
-      { type: 'ping', params: { source: 'PHONE1', destination: '10.30.0.1', successRate: 100 } },
-    ],
-    status: 'available',
-  },
-  {
-    id: 'NET-022',
-    title: 'Static Route to Remote Site Missing',
-    description: 'HQ router R1 cannot reach the remote branch network 192.168.50.0/24. The branch is connected via a point-to-point link, with R2 (branch router) reachable at 10.255.255.2. Add a static route on R1 to restore connectivity.',
-    category: 'routing',
-    difficulty: 2,
-    timeLimit: 12,
-    rewardCredits: 175,
-    rewardXp: 85,
-    labTemplate: 'static_route_branch',
-    hints: [
-      { cost: 35, text: 'Verify the point-to-point link is up with ping 10.255.255.2', revealed: false },
-      { cost: 60, text: 'Command: ip route 192.168.50.0 255.255.255.0 10.255.255.2', revealed: false },
-    ],
-    validation: [
-      { type: 'ping', params: { source: 'R1', destination: '192.168.50.1', successRate: 100 } },
-      { type: 'command', params: { node: 'R1', command: 'show ip route', contains: ['192.168.50.0', '10.255.255.2'] } },
-    ],
-    status: 'available',
-  },
-
-  // === TIER 3: Advanced ===
-  {
-    id: 'NET-042',
-    title: 'OSPF Neighbors Stuck in INIT',
-    description: 'R1 and R2 should form an OSPF adjacency over their shared segment 10.1.1.0/30, but they are stuck in INIT/2-WAY state. Both are configured for Area 0. The network type might be mismatched. Investigate hello/dead timers and network type settings.',
-    category: 'routing',
-    difficulty: 3,
-    timeLimit: 20,
-    rewardCredits: 350,
-    rewardXp: 175,
-    labTemplate: 'ospf_adjacency_issue',
-    hints: [
-      { cost: 70, text: "Compare 'show ip ospf interface' output on both routers", revealed: false },
-      { cost: 100, text: 'Check network type (broadcast vs point-to-point) and timer values', revealed: false },
-    ],
-    validation: [
-      { type: 'command', params: { node: 'R1', command: 'show ip ospf neighbor', contains: ['FULL'] } },
-    ],
-    status: 'available',
-  },
-  {
-    id: 'NET-051',
-    title: 'Inter-VLAN Routing Not Working',
-    description: 'VLAN 10 (10.10.0.0/24) and VLAN 20 (10.20.0.0/24) users cannot communicate. SW1 has SVIs configured but routing might be disabled. The switch should act as the Layer 3 gateway. Enable IP routing and verify SVI status.',
-    category: 'switching',
-    difficulty: 3,
-    timeLimit: 18,
-    rewardCredits: 300,
-    rewardXp: 150,
-    labTemplate: 'intervlan_routing',
-    hints: [
-      { cost: 60, text: "Check if 'ip routing' is enabled globally", revealed: false },
-      { cost: 90, text: "Verify SVIs are up with 'show ip interface brief'", revealed: false },
-    ],
-    validation: [
-      { type: 'ping', params: { source: 'PC1', destination: '10.20.0.10', successRate: 100 } },
-      { type: 'command', params: { node: 'SW1', command: 'show ip route', contains: ['10.10.0.0', '10.20.0.0'] } },
-    ],
-    status: 'available',
-  },
-  {
-    id: 'NET-063',
-    title: 'BGP Session Not Establishing',
-    description: 'The BGP peering session between R1 (AS 65001) and the ISP router (AS 65000, IP 203.0.113.1) is not coming up. Verify the neighbor configuration, check if the TCP port 179 connection is being blocked, and ensure the source interface is correct.',
-    category: 'routing',
-    difficulty: 4,
-    timeLimit: 25,
-    rewardCredits: 500,
-    rewardXp: 250,
-    labTemplate: 'bgp_peering',
-    hints: [
-      { cost: 100, text: "Use 'show ip bgp summary' and 'show ip bgp neighbors' for status", revealed: false },
-      { cost: 150, text: 'Check update-source, ebgp-multihop, and ACLs blocking TCP 179', revealed: false },
-    ],
-    validation: [
-      { type: 'command', params: { node: 'R1', command: 'show ip bgp summary', contains: ['65000', 'Established'] } },
-    ],
-    status: 'available',
-  },
-
-  // === TIER 4: Expert ===
-  {
-    id: 'NET-078',
-    title: 'HSRP Failover Not Working',
-    description: 'R1 and R2 are configured as HSRP pairs for gateway redundancy on VLAN 100. R1 should be active (priority 110) but both routers show as active, causing a duplicate IP conflict. Fix the HSRP group configuration to restore proper failover.',
-    category: 'high-availability',
-    difficulty: 4,
-    timeLimit: 22,
-    rewardCredits: 450,
-    rewardXp: 225,
-    labTemplate: 'hsrp_failover',
-    hints: [
-      { cost: 90, text: "Check 'show standby brief' on both routers - look for group number mismatch", revealed: false },
-      { cost: 130, text: 'Ensure both routers use the same HSRP group number and virtual IP', revealed: false },
-    ],
-    validation: [
-      { type: 'command', params: { node: 'R1', command: 'show standby brief', contains: ['Active', 'Group 1'] } },
-      { type: 'command', params: { node: 'R2', command: 'show standby brief', contains: ['Standby', 'Group 1'] } },
-    ],
-    status: 'available',
-  },
-  {
-    id: 'NET-092',
-    title: 'ACL Blocking Legitimate Traffic',
-    description: 'After a security audit, users in 10.10.0.0/24 can no longer access the web server at 10.50.0.100. An ACL was applied to R1 interface Gi0/2. The ACL should block Telnet (23) but permit HTTP (80) and HTTPS (443). Fix the ACL without removing security controls.',
-    category: 'security',
-    difficulty: 5,
-    timeLimit: 25,
-    rewardCredits: 600,
-    rewardXp: 300,
-    labTemplate: 'acl_troubleshoot',
-    hints: [
-      { cost: 120, text: "Review ACL with 'show access-lists' and check hit counters", revealed: false },
-      { cost: 180, text: 'Look for implicit deny or missing permit statements for TCP 80/443', revealed: false },
-    ],
-    validation: [
-      { type: 'ping', params: { source: 'PC1', destination: '10.50.0.100', successRate: 100 } },
-      { type: 'command', params: { node: 'R1', command: 'show access-lists', contains: ['permit tcp', '80', '443'] } },
-    ],
-    status: 'available',
-  },
-];
+/**
+ * Generate initial ticket pool using the ticket engine.
+ * Creates 12 tickets spread across difficulties for demo variety.
+ */
+function generateInitialTicketPool(): Ticket[] {
+  const engine = getTicketEngine();
+  const pool: Ticket[] = [];
+  const difficulties = [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 5] as Ticket['difficulty'][];
+  for (const diff of difficulties) {
+    pool.push(engine.generateTicket({ difficulty: diff }));
+  }
+  return pool;
+}
 
 
 export const useGameStore = create<GameState>()(
@@ -378,7 +163,7 @@ export const useGameStore = create<GameState>()(
       currentView: 'office',
       activeTicket: null,
       activeLab: null,
-      availableTickets: SAMPLE_TICKETS,
+      availableTickets: generateInitialTicketPool(),
       timeOfDay: 14, // 2 PM
       connectedNodeId: null,
 
@@ -512,6 +297,14 @@ export const useGameStore = create<GameState>()(
         // Stop timer
         get().stopTicketTimer();
 
+        // Calculate time-pressure rewards
+        const completedAt = Date.now();
+        const tp = calculateTimePressure(
+          activeTicket.difficulty,
+          activeTicket.startedAt ?? completedAt,
+          completedAt,
+        );
+
         // Consume items that should be used when completing this ticket
         if (activeTicket.consumeItems && activeTicket.consumeItems.length > 0) {
           for (const itemId of activeTicket.consumeItems) {
@@ -536,12 +329,14 @@ export const useGameStore = create<GameState>()(
           uptimePoints = uptime.pointsEarned;
         }
 
-        // Calculate rewards with bonus
+        // Calculate rewards with uptime bonus, speed bonus, and overtime penalty
         const baseCredits = activeTicket.rewardCredits;
         const baseXp = activeTicket.rewardXp;
-        const totalCredits = Math.floor(baseCredits * uptimeBonus) + uptimePoints;
-        const totalXp = Math.floor(baseXp * uptimeBonus);
-        const reputationGain = Math.max(1, 10 - uptime.totalIncidents);
+        const totalCredits = Math.max(0,
+          Math.floor(baseCredits * uptimeBonus * tp.speedBonus) - tp.overtimePenalty
+        ) + uptimePoints;
+        const totalXp = Math.floor(baseXp * uptimeBonus * tp.speedBonus);
+        const reputationGain = tp.reputationChange;
 
         set({
           activeTicket: null,
@@ -600,6 +395,25 @@ export const useGameStore = create<GameState>()(
           player: { ...state.player, credits: state.player.credits - hint.cost }
         };
       }),
+
+      refreshAvailableTickets: (count = 12) => {
+        const engine = getTicketEngine();
+        const { player } = get();
+        const level = player.level;
+
+        // Scale difficulty based on player level: levels 1-2 get T1-2, 3-4 get T2-3, 5-6 get T3-4, 7-8 get T4-5
+        const maxDifficulty = Math.min(5, Math.ceil(level / 2) + 1);
+        const minDifficulty = Math.max(1, Math.floor(level / 3));
+
+        const pool: Ticket[] = [];
+        for (let i = 0; i < count; i++) {
+          const diff = Math.max(minDifficulty, Math.min(maxDifficulty,
+            Math.floor(Math.random() * (maxDifficulty - minDifficulty + 1)) + minDifficulty
+          )) as Ticket['difficulty'];
+          pool.push(engine.generateTicket({ difficulty: diff }));
+        }
+        set({ availableTickets: pool });
+      },
 
       // Uptime tracking actions
       startUptimeTracking: async (labPath, nodeIds) => {
