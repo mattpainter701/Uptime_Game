@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId, SessionState, SettingsPreset, TicketSla, SlaTier } from '../types/game';
+import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId, SessionState, SettingsPreset, TicketSla, SlaTier, SessionRecord, AnalyticsSnapshot, TierStats, CategoryStats, AnalyticsReport, TicketCategory } from '../types/game';
 import { ITEM_DEFINITIONS, DEFAULT_SETTINGS, SETTINGS_PRESETS } from '../types/game';
 import { getCareerLevelFromXp, getXpToNextCareerLevel } from '../lib/careerProgression';
 import { getReputationLossForFailure } from '../lib/reputationProgression';
@@ -59,6 +59,10 @@ interface GameState {
 
   // Session state (pause/resume)
   sessionState: SessionState;
+
+  // Session history & analytics
+  sessionHistory: SessionRecord[];
+  analytics: AnalyticsSnapshot | null;
 
   // Actions
   setView: (view: GameView) => void;
@@ -127,6 +131,11 @@ interface GameState {
   // Pause/Resume actions
   pauseGame: () => void;
   resumeGame: () => void;
+
+  // Analytics actions
+  recordTicketResult: (outcome: 'completed' | 'failed', score: number, creditsEarned: number, xpEarned: number, uptimeBonus: number, hintsUsed: number, hintCostTotal: number) => void;
+  computeAnalytics: () => void;
+  reportAnalytics: () => Promise<void>;
 }
 
 /**
@@ -229,6 +238,10 @@ export const useGameStore = create<GameState>()(
         isPaused: false,
         pausedAt: null,
       },
+
+      // Session history & analytics
+      sessionHistory: [],
+      analytics: null,
 
       // View actions
       setView: (view) => set({ currentView: view }),
@@ -348,13 +361,25 @@ export const useGameStore = create<GameState>()(
         get().addCredits(totalCredits);
         get().addXp(totalXp);
         get().addReputation(reputationGain);
+
+        // Record session for analytics
+        const hintsUsed = activeTicket.hints.filter(h => h.revealed).length;
+        const hintCostTotal = activeTicket.hints.filter(h => h.revealed).reduce((sum, h) => sum + h.cost, 0);
+        get().recordTicketResult('completed', 1.0, totalCredits, totalXp, uptimeBonus, hintsUsed, hintCostTotal);
       },
 
       failTicket: () => {
         // Stop timer and uptime tracking
         get().stopTicketTimer();
-        const { uptimeWs } = get();
+        const { uptimeWs, activeTicket } = get();
         uptimeWs?.disconnect();
+
+        // Record session for analytics before clearing activeTicket
+        if (activeTicket) {
+          const hintsUsed = activeTicket.hints.filter(h => h.revealed).length;
+          const hintCostTotal = activeTicket.hints.filter(h => h.revealed).reduce((sum, h) => sum + h.cost, 0);
+          get().recordTicketResult('failed', 0, 0, 0, 1.0, hintsUsed, hintCostTotal);
+        }
 
         set((state) => {
           if (!state.activeTicket) return state;
@@ -726,6 +751,7 @@ export const useGameStore = create<GameState>()(
             elevatorOpen: state.elevatorOpen,
             connectedNodeId: state.connectedNodeId,
             playerPosition: state.playerPosition,
+            sessionHistory: state.sessionHistory,
             lastSavedAt: Date.now(),
             uptime: {
               ...state.uptime,
@@ -809,6 +835,7 @@ export const useGameStore = create<GameState>()(
             elevatorOpen: false,
             currentFloor: 'basement',
             timeOfDay: 14,
+            sessionHistory: [],
             lastSavedAt: null,
           };
 
@@ -880,6 +907,7 @@ export const useGameStore = create<GameState>()(
           elevatorOpen: state.elevatorOpen,
           connectedNodeId: state.connectedNodeId,
           playerPosition: state.playerPosition,
+          sessionHistory: state.sessionHistory,
           lastSavedAt: Date.now(),
           uptime: {
             ...state.uptime,
@@ -984,10 +1012,178 @@ export const useGameStore = create<GameState>()(
 
         console.log('Game resumed, pause duration:', (pauseDuration / 1000).toFixed(1), 's');
       },
+
+      // === Analytics Actions ===
+
+      recordTicketResult: (outcome, score, creditsEarned, xpEarned, uptimeBonus, hintsUsed, hintCostTotal) => {
+        const { activeTicket } = get();
+        if (!activeTicket || !activeTicket.startedAt) return;
+
+        const record: SessionRecord = {
+          id: `${activeTicket.id}-${Date.now()}`,
+          ticketId: activeTicket.id,
+          ticketTitle: activeTicket.title,
+          category: activeTicket.category,
+          difficulty: activeTicket.difficulty,
+          outcome,
+          timestamp: Date.now(),
+          timeSpentMs: Date.now() - activeTicket.startedAt,
+          score,
+          creditsEarned,
+          xpEarned,
+          uptimeBonus,
+          hintsUsed,
+          hintCostTotal,
+        };
+
+        set((state) => ({
+          sessionHistory: [...state.sessionHistory, record],
+        }));
+
+        // Recompute analytics
+        get().computeAnalytics();
+
+        // Report to server in background
+        get().reportAnalytics().catch(() => {}); // fire-and-forget
+      },
+
+      computeAnalytics: () => {
+        const { sessionHistory } = get();
+
+        if (sessionHistory.length === 0) {
+          set({ analytics: null });
+          return;
+        }
+
+        // Per-tier aggregation
+        const tierMap = new Map<number, { attempts: number; wins: number; losses: number; totalTime: number; totalScore: number }>();
+        // Per-category aggregation
+        const categoryMap = new Map<string, { attempts: number; wins: number; losses: number }>();
+
+        let totalTimeSum = 0;
+        let totalScoreSum = 0;
+        let totalUptimeBonusSum = 0;
+        const outcomes: SessionRecord[] = [];
+
+        for (const r of sessionHistory) {
+          // Tier
+          let t = tierMap.get(r.difficulty);
+          if (!t) {
+            t = { attempts: 0, wins: 0, losses: 0, totalTime: 0, totalScore: 0 };
+            tierMap.set(r.difficulty, t);
+          }
+          t.attempts++;
+          if (r.outcome === 'completed') {
+            t.wins++;
+            t.totalTime += r.timeSpentMs;
+            t.totalScore += r.score;
+          } else {
+            t.losses++;
+            t.totalTime += r.timeSpentMs;
+            t.totalScore += r.score;
+          }
+
+          // Category
+          let c = categoryMap.get(r.category);
+          if (!c) {
+            c = { attempts: 0, wins: 0, losses: 0 };
+            categoryMap.set(r.category, c);
+          }
+          c.attempts++;
+          if (r.outcome === 'completed') c.wins++;
+          else c.losses++;
+
+          totalTimeSum += r.timeSpentMs;
+          totalScoreSum += r.score;
+          totalUptimeBonusSum += r.uptimeBonus;
+          outcomes.push(r);
+        }
+
+        const totalAttempts = sessionHistory.length;
+        const totalWins = outcomes.filter(r => r.outcome === 'completed').length;
+        const totalLosses = totalAttempts - totalWins;
+
+        // Build tiers array sorted by difficulty
+        const tiers: TierStats[] = Array.from(tierMap.entries())
+          .map(([diff, data]) => ({
+            difficulty: diff as 1 | 2 | 3 | 4 | 5,
+            attempts: data.attempts,
+            wins: data.wins,
+            losses: data.losses,
+            winRate: data.attempts > 0 ? data.wins / data.attempts : 0,
+            avgTimeMs: data.attempts > 0 ? data.totalTime / data.attempts : 0,
+            avgScore: data.attempts > 0 ? data.totalScore / data.attempts : 0,
+          }))
+          .sort((a, b) => a.difficulty - b.difficulty);
+
+        // Build categories array sorted by attempts (most first)
+        const categories: CategoryStats[] = Array.from(categoryMap.entries())
+          .map(([cat, data]) => ({
+            category: cat as TicketCategory,
+            attempts: data.attempts,
+            wins: data.wins,
+            losses: data.losses,
+            winRate: data.attempts > 0 ? data.wins / data.attempts : 0,
+          }))
+          .sort((a, b) => b.attempts - a.attempts);
+
+        // Trend: last 10 outcomes
+        const trend = outcomes.slice(-10).map(r => r.outcome);
+
+        // Recommendations
+        const recommendations: string[] = [];
+        for (const t of tiers) {
+          if (t.attempts >= 2 && t.winRate < 0.5) {
+            recommendations.push(`Tier ${t.difficulty}: ${t.wins}/${t.attempts} (${(t.winRate * 100).toFixed(0)}%) — consider reviewing Tier ${t.difficulty} tickets`);
+          }
+        }
+        for (const c of categories) {
+          if (c.attempts >= 2 && c.winRate < 0.5) {
+            recommendations.push(`${c.category} tickets have low win rate (${(c.winRate * 100).toFixed(0)}%) — consider practice mode`);
+          }
+        }
+
+        const analytics: AnalyticsSnapshot = {
+          tiers,
+          categories,
+          overall: {
+            totalAttempts,
+            totalWins,
+            totalLosses,
+            winRate: totalAttempts > 0 ? totalWins / totalAttempts : 0,
+            avgTimeMs: totalAttempts > 0 ? totalTimeSum / totalAttempts : 0,
+            avgScore: totalAttempts > 0 ? totalScoreSum / totalAttempts : 0,
+            avgUptimeBonus: totalAttempts > 0 ? totalUptimeBonusSum / totalAttempts : 0,
+          },
+          trend,
+          recommendations,
+        };
+
+        set({ analytics });
+      },
+
+      reportAnalytics: async () => {
+        const { player, sessionHistory, analytics } = get();
+        if (sessionHistory.length === 0) return;
+
+        try {
+          // Send full history to server for aggregate analytics
+          const response = await api.analytics.report({
+            playerId: player.id,
+            records: sessionHistory,
+            snapshot: analytics || undefined as any,
+          });
+          if (!response.ok) {
+            console.warn('Failed to report analytics to server:', response.error);
+          }
+        } catch (error) {
+          console.warn('Error reporting analytics:', error);
+        }
+      },
     }),
     {
       name: 'netops-tower-save',
-      version: 2,
+      version: 3,
       migrate: (persistedState: any, _version: number) => {
         // Migration v0 → v1: old format only had player, settings, inventory
         if (_version < 1) {
@@ -1020,6 +1216,13 @@ export const useGameStore = create<GameState>()(
             },
           };
         }
+        // Migration v2 → v3: sessionHistory added
+        if (_version < 3) {
+          persistedState = {
+            ...persistedState,
+            sessionHistory: persistedState.sessionHistory ?? [],
+          };
+        }
         return persistedState;
       },
       partialize: (state) => ({
@@ -1035,6 +1238,7 @@ export const useGameStore = create<GameState>()(
         elevatorOpen: state.elevatorOpen,
         connectedNodeId: state.connectedNodeId,
         playerPosition: state.playerPosition,
+        sessionHistory: state.sessionHistory,
         lastSavedAt: Date.now(),
         // Save uptime state data but mark as not-tracking (WS reconnects on load)
         uptime: {

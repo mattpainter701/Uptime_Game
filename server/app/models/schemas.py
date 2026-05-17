@@ -330,3 +330,66 @@ class LabListResponse(BaseModel):
 
 class NodeListResponse(BaseModel):
     nodes: List[NodeInfo]
+
+# ============================================================================
+# Analytics Models
+# ============================================================================
+
+class SessionRecordModel(BaseModel):
+    """A single ticket outcome record from a client."""
+    id: str
+    ticket_id: str = Field(alias="ticketId")
+    ticket_title: str = Field(alias="ticketTitle")
+    category: str
+    difficulty: int = Field(ge=1, le=5)
+    outcome: str  # 'completed' | 'failed'
+    timestamp: int
+    time_spent_ms: int = Field(alias="timeSpentMs")
+    score: float = Field(ge=0.0, le=1.0)
+    credits_earned: int = Field(alias="creditsEarned")
+    xp_earned: int = Field(alias="xpEarned")
+    uptime_bonus: float = Field(alias="uptimeBonus")
+    hints_used: int = Field(alias="hintsUsed")
+    hint_cost_total: int = Field(alias="hintCostTotal")
+
+    class Config:
+        populate_by_name = True
+
+
+class AnalyticsReportRequest(BaseModel):
+    """Client analytics report submitted at session end."""
+    player_id: str = Field(alias="playerId")
+    records: List[SessionRecordModel]
+    snapshot: Optional[Dict[str, Any]] = None
+
+    class Config:
+        populate_by_name = True
+
+
+class TierStatsModel(BaseModel):
+    """Aggregate stats for a single difficulty tier."""
+    difficulty: int = Field(ge=1, le=5)
+    attempts: int = 0
+    wins: int = 0
+    losses: int = 0
+    win_rate: float = 0.0
+    avg_time_ms: float = 0.0
+    avg_score: float = 0.0
+
+
+class CategoryStatsModel(BaseModel):
+    """Aggregate stats for a single category."""
+    category: str
+    attempts: int = 0
+    wins: int = 0
+    losses: int = 0
+    win_rate: float = 0.0
+
+
+class AggregateAnalyticsResponse(BaseModel):
+    """Server-side aggregate analytics across all players."""
+    total_players: int = 0
+    total_tickets: int = 0
+    tiers: List[TierStatsModel] = []
+    categories: List[CategoryStatsModel] = []
+    overall_win_rate: float = 0.0

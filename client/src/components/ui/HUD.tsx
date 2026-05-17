@@ -2,6 +2,7 @@ import { useGameStore } from '../../store/gameStore';
 import { UptimeClockMini } from './UptimeClock';
 import { TicketTimerMini } from './TicketTimer';
 import { InventoryMini } from './InventoryPanel';
+import { DifficultyIndicator } from './DifficultyCurvePanel';
 
 function SaveIndicator() {
   const lastSavedAt = useGameStore((s) => s.lastSavedAt);
@@ -153,6 +154,11 @@ export function HUD() {
               <InventoryMini />
             </div>
           </div>
+
+          <div className="w-px h-8 bg-gray-600" />
+
+          {/* Difficulty Indicator */}
+          <DifficultyIndicator />
 
           <div className="w-px h-8 bg-gray-600" />
 

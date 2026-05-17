@@ -439,5 +439,73 @@ export interface SessionState {
   pausedAt: number | null; // timestamp when pause started
 }
 
+// Session record — captures per-ticket outcome for analytics
+export interface SessionRecord {
+  id: string;               // unique record id (ticket_id + timestamp)
+  ticketId: string;
+  ticketTitle: string;
+  category: TicketCategory;
+  difficulty: 1 | 2 | 3 | 4 | 5;
+  outcome: 'completed' | 'failed';
+  timestamp: number;        // when the ticket resolved
+  timeSpentMs: number;      // elapsed time from start to resolution
+  score: number;            // 0.0 to 1.0 (from validation)
+  creditsEarned: number;
+  xpEarned: number;
+  uptimeBonus: number;      // multiplier applied
+  hintsUsed: number;
+  hintCostTotal: number;
+}
+
+// Analytics types for difficulty curve monitoring
+export interface TierStats {
+  difficulty: 1 | 2 | 3 | 4 | 5;
+  attempts: number;
+  wins: number;
+  losses: number;
+  winRate: number;          // 0.0 to 1.0
+  avgTimeMs: number;
+  avgScore: number;
+}
+
+export interface CategoryStats {
+  category: TicketCategory;
+  attempts: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+}
+
+export interface AnalyticsSnapshot {
+  tiers: TierStats[];
+  categories: CategoryStats[];
+  overall: {
+    totalAttempts: number;
+    totalWins: number;
+    totalLosses: number;
+    winRate: number;
+    avgTimeMs: number;
+    avgScore: number;
+    avgUptimeBonus: number;
+  };
+  trend: ('completed' | 'failed')[];  // last 10 ticket outcomes
+  recommendations: string[];
+}
+
+// Server-side analytics models
+export interface AnalyticsReport {
+  playerId: string;
+  records: SessionRecord[];
+  snapshot: AnalyticsSnapshot;
+}
+
+export interface AggregateAnalytics {
+  totalPlayers: number;
+  totalTickets: number;
+  tiers: TierStats[];
+  categories: CategoryStats[];
+  overallWinRate: number;
+}
+
 // Career progression
 export { CAREER_LEVELS } from '../lib/careerProgression';
