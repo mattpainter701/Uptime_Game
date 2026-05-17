@@ -1,0 +1,84 @@
+{
+  "//": "NetOps Tower — Performance Budgets and Thresholds",
+  "//": "Enforced by CI/CD pipeline (.github/workflows/ci.yml)",
+  "//": "Review quarterly or after major feature additions",
+
+  "bundles": {
+    "totalJS": {
+      "budget": "2 MB",
+      "budgetBytes": 2097152,
+      "description": "Total JavaScript shipped to client (all chunks combined)"
+    },
+    "totalCSS": {
+      "budget": "512 KB",
+      "budgetBytes": 524288,
+      "description": "Total CSS shipped to client"
+    },
+    "largestAsset": {
+      "budget": "1 MB",
+      "budgetBytes": 1048576,
+      "description": "No single asset may exceed this"
+    }
+  },
+
+  "runtime": {
+    "firstContentfulPaint": {
+      "budget": "1.5s",
+      "budgetMs": 1500,
+      "description": "Time until first DOM content is painted"
+    },
+    "timeToInteractive": {
+      "budget": "3.0s",
+      "budgetMs": 3000,
+      "description": "Time until the app is fully interactive"
+    },
+    "frameBudget": {
+      "budget": "16ms",
+      "budgetMs": 16,
+      "description": "Per-frame render budget (60 FPS target)"
+    }
+  },
+
+  "websocket": {
+    "messageBatchInterval": {
+      "budget": "100ms",
+      "budgetMs": 100,
+      "description": "Uptime updates are batched and sent at most every 100ms"
+    },
+    "maxBatchSize": {
+      "budget": 50,
+      "description": "Maximum updates per WebSocket message batch"
+    }
+  },
+
+  "scene3d": {
+    "maxDrawCalls": {
+      "budget": 2000,
+      "description": "Maximum WebGL draw calls per frame"
+    },
+    "maxTriangles": {
+      "budget": 500000,
+      "description": "Maximum rendered triangles at highest LOD"
+    },
+    "lodDistances": {
+      "high": 10,
+      "medium": 30,
+      "low": 60,
+      "cull": 100,
+      "description": "LOD transition distances in world units"
+    }
+  },
+
+  "memory": {
+    "heapBudget": {
+      "budget": "256 MB",
+      "budgetMB": 256,
+      "description": "Maximum JS heap size during gameplay"
+    },
+    "textureBudget": {
+      "budget": "128 MB",
+      "budgetMB": 128,
+      "description": "Maximum GPU texture memory"
+    }
+  }
+}
