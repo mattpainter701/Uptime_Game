@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId, SessionState } from '../types/game';
-import { ITEM_DEFINITIONS } from '../types/game';
+import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId, SessionState, SettingsPreset } from '../types/game';
+import { ITEM_DEFINITIONS, DEFAULT_SETTINGS, SETTINGS_PRESETS } from '../types/game';
 import { getCareerLevelFromXp, getXpToNextCareerLevel } from '../lib/careerProgression';
 import { getReputationLossForFailure } from '../lib/reputationProgression';
 import { api } from '../services/api';
@@ -92,6 +92,10 @@ interface GameState {
 
   // Settings actions
   updateSettings: (settings: Partial<GameSettings>) => void;
+  exportSettings: () => string;
+  importSettings: (json: string) => boolean;
+  resetSettings: () => void;
+  applyPreset: (preset: SettingsPreset) => void;
 
   // Player movement actions
   setPlayerPosition: (position: Partial<PlayerPosition>) => void;
@@ -378,12 +382,7 @@ export const useGameStore = create<GameState>()(
       timeOfDay: 14, // 2 PM
       connectedNodeId: null,
 
-      settings: {
-        musicVolume: 0.5,
-        sfxVolume: 0.7,
-        terminalTheme: 'cyberpunk',
-        terminalFontSize: 14,
-      },
+      settings: DEFAULT_SETTINGS,
 
       gameConfig: null,
 
@@ -764,6 +763,50 @@ export const useGameStore = create<GameState>()(
         settings: { ...state.settings, ...newSettings }
       })),
 
+      exportSettings: () => {
+        const { settings } = get();
+        return JSON.stringify({
+          type: 'netops-tower-settings',
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          settings,
+        }, null, 2);
+      },
+
+      importSettings: (json: string) => {
+        try {
+          const parsed = JSON.parse(json);
+          // Accept both dedicated settings export and full save (extract settings)
+          const settingsData = parsed.settings || parsed.state?.settings;
+          if (!settingsData) {
+            console.error('Invalid settings file: no settings found');
+            return false;
+          }
+          // Validate structure — must have at least musicVolume
+          if (typeof settingsData.musicVolume !== 'number') {
+            console.error('Invalid settings file: malformed settings');
+            return false;
+          }
+          // Merge imported settings over defaults (safe: missing fields stay default)
+          const merged: GameSettings = { ...get().settings, ...settingsData };
+          set({ settings: merged });
+          return true;
+        } catch (err) {
+          console.error('Failed to import settings:', err);
+          return false;
+        }
+      },
+
+      resetSettings: () => {
+        set({ settings: { ...DEFAULT_SETTINGS } });
+      },
+
+      applyPreset: (preset: SettingsPreset) => {
+        const presetSettings = SETTINGS_PRESETS[preset];
+        if (!presetSettings) return;
+        set({ settings: { ...presetSettings } });
+      },
+
       // Player movement actions
       setPlayerPosition: (position) => set((state) => ({
         playerPosition: { ...state.playerPosition, ...position }
@@ -1130,12 +1173,11 @@ export const useGameStore = create<GameState>()(
     }),
     {
       name: 'netops-tower-save',
-      version: 1,
+      version: 2,
       migrate: (persistedState: any, _version: number) => {
         // Migration v0 → v1: old format only had player, settings, inventory
-        // Fill in defaults for all the new fields introduced in v1
         if (_version < 1) {
-          return {
+          persistedState = {
             ...persistedState,
             activeTicket: persistedState.activeTicket ?? null,
             activeLab: persistedState.activeLab ?? null,
@@ -1151,6 +1193,16 @@ export const useGameStore = create<GameState>()(
               sessionId: null, isTracking: false, startedAt: null,
               nodes: {}, totalUptimeSeconds: 0, totalDowntimeSeconds: 0,
               uptimePercentage: 100, pointsEarned: 0, totalIncidents: 0,
+            },
+          };
+        }
+        // Migration v1 → v2: expanded game settings from 4 fields to 20
+        if (_version < 2) {
+          persistedState = {
+            ...persistedState,
+            settings: {
+              ...DEFAULT_SETTINGS,         // fill in all new fields
+              ...(persistedState.settings || {}), // keep user's old values
             },
           };
         }

@@ -142,12 +142,139 @@ export type GameView = 'office' | 'terminal' | 'tickets' | 'shop' | 'settings';
 
 export type TimeOfDay = number; // 0-24
 
+export type GraphicsQuality = 'low' | 'medium' | 'high';
+export type ColorblindMode = 'none' | 'protanopia' | 'deuteranopia' | 'tritanopia';
+export type SettingsPreset = 'performance' | 'balanced' | 'quality';
+
 export interface GameSettings {
+  // Graphics
+  graphicsQuality: GraphicsQuality;
+  shadows: boolean;
+  antialiasing: boolean;
+  renderDistance: number; // 1-10
+
+  // Audio
+  masterVolume: number; // 0-1
   musicVolume: number;
   sfxVolume: number;
+  ambientSounds: boolean;
+  uiSounds: boolean;
+
+  // Gameplay
+  showHints: boolean;
+  autoValidate: boolean;
+  confirmOnFail: boolean;
+  enforceTimeLimits: boolean;
+
+  // Terminal
   terminalTheme: 'dark' | 'light' | 'cyberpunk';
   terminalFontSize: number;
+  terminalOpacity: number; // 0-1
+  terminalBlinkCursor: boolean;
+  terminalScrollback: number; // 500-5000
+
+  // Accessibility (stubs — full implementation in T9)
+  colorblindMode: ColorblindMode;
+  reducedMotion: boolean;
+  largeText: boolean;
 }
+
+/** Preset definitions for one-click settings application */
+export const SETTINGS_PRESETS: Record<SettingsPreset, GameSettings> = {
+  performance: {
+    graphicsQuality: 'low',
+    shadows: false,
+    antialiasing: false,
+    renderDistance: 3,
+    masterVolume: 0.5,
+    musicVolume: 0.3,
+    sfxVolume: 0.5,
+    ambientSounds: false,
+    uiSounds: true,
+    showHints: true,
+    autoValidate: false,
+    confirmOnFail: false,
+    enforceTimeLimits: false,
+    terminalTheme: 'dark',
+    terminalFontSize: 14,
+    terminalOpacity: 0.85,
+    terminalBlinkCursor: false,
+    terminalScrollback: 1000,
+    colorblindMode: 'none',
+    reducedMotion: true,
+    largeText: false,
+  },
+  balanced: {
+    graphicsQuality: 'medium',
+    shadows: true,
+    antialiasing: true,
+    renderDistance: 5,
+    masterVolume: 0.7,
+    musicVolume: 0.5,
+    sfxVolume: 0.7,
+    ambientSounds: true,
+    uiSounds: true,
+    showHints: true,
+    autoValidate: false,
+    confirmOnFail: true,
+    enforceTimeLimits: true,
+    terminalTheme: 'cyberpunk',
+    terminalFontSize: 14,
+    terminalOpacity: 0.9,
+    terminalBlinkCursor: true,
+    terminalScrollback: 2000,
+    colorblindMode: 'none',
+    reducedMotion: false,
+    largeText: false,
+  },
+  quality: {
+    graphicsQuality: 'high',
+    shadows: true,
+    antialiasing: true,
+    renderDistance: 8,
+    masterVolume: 0.8,
+    musicVolume: 0.7,
+    sfxVolume: 0.8,
+    ambientSounds: true,
+    uiSounds: true,
+    showHints: true,
+    autoValidate: true,
+    confirmOnFail: true,
+    enforceTimeLimits: true,
+    terminalTheme: 'cyberpunk',
+    terminalFontSize: 16,
+    terminalOpacity: 0.95,
+    terminalBlinkCursor: true,
+    terminalScrollback: 3000,
+    colorblindMode: 'none',
+    reducedMotion: false,
+    largeText: false,
+  },
+};
+
+export const DEFAULT_SETTINGS: GameSettings = {
+  graphicsQuality: 'medium',
+  shadows: true,
+  antialiasing: true,
+  renderDistance: 5,
+  masterVolume: 0.7,
+  musicVolume: 0.5,
+  sfxVolume: 0.7,
+  ambientSounds: true,
+  uiSounds: true,
+  showHints: true,
+  autoValidate: false,
+  confirmOnFail: true,
+  enforceTimeLimits: true,
+  terminalTheme: 'cyberpunk',
+  terminalFontSize: 14,
+  terminalOpacity: 0.9,
+  terminalBlinkCursor: true,
+  terminalScrollback: 2000,
+  colorblindMode: 'none',
+  reducedMotion: false,
+  largeText: false,
+};
 
 // Uptime tracking types
 export interface NodeUptimeStats {
