@@ -13,6 +13,9 @@ export const TICKET_TEMPLATE_CATEGORIES: TicketCategory[] = [
   'systems',
   'automation',
   'high-availability',
+  'wireless',
+  'voice',
+  'datacenter',
 ];
 
 export const TICKET_TEMPLATE_DIFFICULTIES: Ticket['difficulty'][] = [1, 2, 3, 4, 5];

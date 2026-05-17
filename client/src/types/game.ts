@@ -37,12 +37,34 @@ export type TicketCategory =
   | 'security'
   | 'systems'
   | 'automation'
-  | 'high-availability';
+  | 'high-availability'
+  | 'wireless'
+  | 'voice'
+  | 'datacenter';
 
 export interface TicketHint {
   cost: number;
   text: string;
   revealed: boolean;
+}
+
+// Ticket Engine v2: Hint economy & SLA time-pressure
+export type SlaTier = 'platinum' | 'gold' | 'silver' | 'bronze';
+
+export interface TicketSla {
+  tier: SlaTier;
+  timeLimitMinutes: number;
+  speedBonusThresholdPercent: number;  // % of timeLimit under which speed bonus kicks in
+  speedBonusMultiplier: number;        // e.g. 1.5 = 50% extra credits
+  overtimePenaltyPerMinute: number;    // credit loss per minute over timeLimit
+  reputationBonus: number;             // flat rep bonus for on-time completion
+}
+
+export interface TicketHintEconomy {
+  maxHints: number;           // max hints purchasable (default 3)
+  baseCost: number;           // cost of first hint
+  costMultiplier: number;     // each subsequent hint multiplies cost (e.g. 1.5)
+  freeHintsPerDay: number;    // daily free hints (from shop items)
 }
 
 export interface ValidationCriteria {
