@@ -1,2 +1,2 @@
 # Routes
-from . import labs, nodes, console, status, uptime, validation
+from . import labs, nodes, console, status, uptime, validation, analytics
