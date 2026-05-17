@@ -417,6 +417,26 @@ export function Terminal({
       if (code === 13) { // Enter
         processCommand(term, currentInputRef.current);
         currentInputRef.current = '';
+      } else if (code === 9) { // Tab — autocomplete
+        const completions = cliRef.current.autocomplete?.(currentInputRef.current);
+        if (completions && completions.length === 1) {
+          // Single completion: replace the last word
+          const words = currentInputRef.current.split(/\s+/);
+          words[words.length - 1] = completions[0];
+          const newInput = words.join(' ');
+          // Clear and rewrite
+          for (let i = 0; i < currentInputRef.current.length; i++) {
+            term.write('\b \b');
+          }
+          currentInputRef.current = newInput + ' ';
+          term.write(newInput + ' ');
+        } else if (completions && completions.length > 1) {
+          // Multiple completions: show below
+          term.writeln('');
+          completions.forEach((c) => term.writeln(`  ${c}`));
+          writePrompt(term);
+          term.write(currentInputRef.current);
+        }
       } else if (code === 127) { // Backspace
         if (currentInputRef.current.length > 0) {
           currentInputRef.current = currentInputRef.current.slice(0, -1);

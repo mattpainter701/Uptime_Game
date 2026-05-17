@@ -94,6 +94,7 @@ export interface FortiCliSession {
   run(command: string): FortiCliResult;
   getPrompt(): string;
   snapshot(): FortiCliSnapshot;
+  autocomplete(partialInput: string): string[];
 }
 
 const DEFAULT_VERSION = 'FortiGate-VM64 v7.4.3,build2463,231219 (GA)';
@@ -205,6 +206,7 @@ const INTERFACE_EDIT_HELP = [
 const POLICY_HELP = [
   '  edit <id>                    Create or select a policy',
   '  show                         Display all policies',
+  '  move <id> before|after <id>  Reorder a policy in the list',
   '  end                          Return to the exec prompt',
   '  exit                         Return to the config prompt',
 ];
@@ -397,7 +399,7 @@ function formatPolicies(policies: FortiPolicyState[]): string[] {
     '--  -------------  --------------------  ------  ---------  ---  ----------  ----',
   ];
 
-  for (const policy of policies.slice().sort((left, right) => left.id - right.id)) {
+  for (const policy of policies) {
     const path = `${policy.srcintf.join(',')} -> ${policy.dstintf.join(',')}`;
     lines.push(
       `${String(policy.id).padEnd(2)}  ${policy.name.padEnd(13)}  ${path.padEnd(20)}  ${policy.action.padEnd(6)}  ${policy.service.join(',').padEnd(9)}  ${policy.nat ? 'yes' : 'no '}  ${policy.logtraffic.padEnd(10)}  ${String(policy.hitCount)}`,
@@ -550,6 +552,211 @@ function helpFor(mode: FortiCliMode, tokens: string[]): string[] {
   }
 }
 
+/** Return possible completions for the partial input given the current mode. */
+function autocompleteFor(
+  mode: FortiCliMode,
+  partialInput: string,
+  interfaces: Map<string, FortiInterfaceState>,
+  policies: FortiPolicyState[],
+  addresses: Map<string, FortiAddressState>,
+  services: Map<string, FortiServiceState>,
+  routes: Map<number, FortiStaticRouteState>,
+): string[] {
+  const rawTokens = tokenize(partialInput);
+  const tokens = lowerTokens(rawTokens);
+  const hasTrailingSpace = partialInput.endsWith(' ') || partialInput.length === 0;
+  const lastToken = hasTrailingSpace ? '' : (rawTokens[rawTokens.length - 1] ?? '');
+  const first = tokens[0] ?? '';
+
+  // EXEC mode — top-level commands
+  if (mode === 'exec') {
+    if (rawTokens.length === 0 || (rawTokens.length === 1 && !hasTrailingSpace)) {
+      return filterCompletions(lastToken, ['get', 'show', 'config', 'diagnose', 'exit']);
+    }
+
+    // "config ..."
+    if (matchesAbbreviation([first], ['config'])) {
+      if (tokens.length === 1 && hasTrailingSpace) {
+        return filterCompletions('', ['system', 'firewall', 'router']);
+      }
+      if (tokens.length < 2) return filterCompletions(lastToken, ['system', 'firewall', 'router']);
+
+      // Only descend if the user has resolved the second level
+      if (!hasTrailingSpace && tokens.length === 2) {
+        return filterCompletions(lastToken, ['system', 'firewall', 'router']);
+      }
+
+      const second = tokens[1];
+      // "config system ..."
+      if (matchesAbbreviation([second], ['system'])) {
+        if (tokens.length === 2 && hasTrailingSpace) {
+          return ['global', 'interface'];
+        }
+        return filterCompletions(lastToken, ['global', 'interface']);
+      }
+      // "config firewall ..."
+      if (matchesAbbreviation([second], ['firewall'])) {
+        if (tokens.length === 2 && hasTrailingSpace) {
+          return ['policy', 'address', 'service'];
+        }
+        if (tokens.length < 3) return filterCompletions(lastToken, ['policy', 'address', 'service']);
+        // "config firewall service ..."
+        if (matchesAbbreviation([tokens[2]], ['service'])) {
+          if (tokens.length === 3 && hasTrailingSpace) {
+            return ['custom'];
+          }
+          return filterCompletions(lastToken, ['custom']);
+        }
+        return filterCompletions(lastToken, ['policy', 'address', 'service']);
+      }
+      // "config router ..."
+      if (matchesAbbreviation([second], ['router'])) {
+        return filterCompletions(lastToken, ['static']);
+      }
+      return filterCompletions(lastToken, ['system', 'firewall', 'router']);
+    }
+
+    // "get ..."
+    if (matchesAbbreviation([first], ['get'])) {
+      if (tokens.length === 1 && hasTrailingSpace) {
+        return filterCompletions('', ['system', 'router']);
+      }
+      if (tokens.length < 2) return filterCompletions(lastToken, ['system', 'router']);
+
+      // Only descend if the user has resolved the second level
+      if (!hasTrailingSpace && tokens.length === 2) {
+        return filterCompletions(lastToken, ['system', 'router']);
+      }
+
+      const second = tokens[1];
+      // "get system ..."
+      if (matchesAbbreviation([second], ['system'])) {
+        return filterCompletions(lastToken, ['status', 'interface']);
+      }
+      // "get router ..."
+      if (matchesAbbreviation([second], ['router'])) {
+        if (tokens.length === 2 && hasTrailingSpace) {
+          return ['info'];
+        }
+        if (tokens.length < 3) return filterCompletions(lastToken, ['info']);
+        // "get router info ..."
+        if (matchesAbbreviation([tokens[2]], ['info'])) {
+          if (tokens.length === 3 && hasTrailingSpace) {
+            return ['routing-table'];
+          }
+          if (tokens.length < 4) return filterCompletions(lastToken, ['routing-table']);
+          // "get router info routing-table ..."
+          if (matchesAbbreviation([tokens[3]], ['routing-table'])) {
+            return filterCompletions(lastToken, ['all']);
+          }
+          return filterCompletions(lastToken, ['routing-table']);
+        }
+        return filterCompletions(lastToken, ['info']);
+      }
+      return filterCompletions(lastToken, ['system', 'router']);
+    }
+
+    // "show ..."
+    if (matchesAbbreviation([first], ['show'])) {
+      if (tokens.length === 1 && hasTrailingSpace) {
+        return filterCompletions('', ['system', 'firewall', 'router']);
+      }
+      if (tokens.length < 2) return filterCompletions(lastToken, ['system', 'firewall', 'router']);
+
+      // Only descend if the user has typed a full second token (trailing space or third token)
+      if (!hasTrailingSpace && tokens.length === 2) {
+        return filterCompletions(lastToken, ['system', 'firewall', 'router']);
+      }
+
+      const second = tokens[1];
+      // "show system ..."
+      if (matchesAbbreviation([second], ['system'])) {
+        return filterCompletions(lastToken, ['interface']);
+      }
+      // "show firewall ..."
+      if (matchesAbbreviation([second], ['firewall'])) {
+        if (tokens.length === 2 && hasTrailingSpace) {
+          return ['policy', 'address', 'service'];
+        }
+        if (tokens.length < 3) return filterCompletions(lastToken, ['policy', 'address', 'service']);
+        // "show firewall service ..."
+        if (matchesAbbreviation([tokens[2]], ['service'])) {
+          return filterCompletions(lastToken, ['custom']);
+        }
+        return filterCompletions(lastToken, ['policy', 'address', 'service']);
+      }
+      // "show router ..."
+      if (matchesAbbreviation([second], ['router'])) {
+        return filterCompletions(lastToken, ['static']);
+      }
+      return filterCompletions(lastToken, ['system', 'firewall', 'router']);
+    }
+
+    return filterCompletions(lastToken, ['get', 'show', 'config', 'diagnose', 'exit']);
+  }
+
+  // CONFIG mode — limited commands
+  if (mode === 'config') {
+    return filterCompletions(lastToken, ['config', 'end', 'exit']);
+  }
+
+  // SECTION mode — edit/show/end/exit + section-specific
+  if (mode.kind === 'section') {
+    const sectionCommands = ['edit', 'show', 'end', 'exit'];
+    switch (mode.section) {
+      case 'firewall-policy':
+        sectionCommands.push('move');
+        break;
+    }
+    return filterCompletions(lastToken, sectionCommands);
+  }
+
+  // EDIT mode — set/next/end/exit/show + section-specific
+  if (mode.kind === 'edit') {
+    const base = ['set', 'next', 'end', 'exit', 'show'];
+    switch (mode.section) {
+      case 'system-global':
+        return filterCompletions(lastToken, ['hostname', 'admintimeout', 'timezone']);
+      case 'system-interface':
+      case 'firewall-policy':
+      case 'firewall-address':
+      case 'firewall-service-custom':
+      case 'router-static':
+        if (hasTrailingSpace && tokens.length >= 1 && lowerTokens([tokens[0] ?? ''])[0] === 'set') {
+          // Completing set sub-command based on section
+          return filterCompletions(lastToken, setSubCommandsForSection(mode.section));
+        }
+        return filterCompletions(lastToken, base);
+    }
+    return filterCompletions(lastToken, base);
+  }
+
+  return [];
+}
+
+function setSubCommandsForSection(section: FortiSection): string[] {
+  switch (section) {
+    case 'system-global':
+      return ['hostname', 'admintimeout', 'timezone'];
+    case 'system-interface':
+      return ['ip', 'alias', 'allowaccess', 'status'];
+    case 'firewall-policy':
+      return ['name', 'srcintf', 'dstintf', 'action', 'service', 'nat', 'logtraffic'];
+    case 'firewall-address':
+      return ['subnet', 'interface'];
+    case 'firewall-service-custom':
+      return ['protocol', 'tcp-portrange', 'udp-portrange'];
+    case 'router-static':
+      return ['dst', 'gateway', 'device', 'distance', 'status'];
+  }
+}
+
+function filterCompletions(partial: string, candidates: string[]): string[] {
+  if (partial === '') return [...candidates];
+  const lower = partial.toLowerCase();
+  return candidates.filter((candidate) => candidate.toLowerCase().startsWith(lower));
+}
+
 export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
   const version = options.version ?? DEFAULT_VERSION;
   const global: FortiGlobalState = {
@@ -559,7 +766,7 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
   };
 
   const interfaces = new Map<string, FortiInterfaceState>((options.interfaces ?? DEFAULT_INTERFACES).map((iface) => [iface.name, cloneInterface(iface)]));
-  const policies = new Map<number, FortiPolicyState>((options.policies ?? DEFAULT_POLICIES).map((policy) => [policy.id, clonePolicy(policy)]));
+  const policies: FortiPolicyState[] = (options.policies ?? DEFAULT_POLICIES).map(clonePolicy);
   const addresses = new Map<string, FortiAddressState>((options.addresses ?? DEFAULT_ADDRESSES).map((address) => [address.name, cloneAddress(address)]));
   const services = new Map<string, FortiServiceState>((options.services ?? DEFAULT_SERVICES).map((service) => [service.name, cloneService(service)]));
   const routes = new Map<number, FortiStaticRouteState>((options.routes ?? DEFAULT_ROUTES).map((route) => [route.id, cloneRoute(route)]));
@@ -571,7 +778,7 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
       global: { ...global },
       mode,
       interfaces: Array.from(interfaces.values()).map(cloneInterface).sort((left, right) => left.name.localeCompare(right.name)),
-      policies: Array.from(policies.values()).map(clonePolicy).sort((left, right) => left.id - right.id),
+      policies: policies.map(clonePolicy),
       addresses: Array.from(addresses.values()).map(cloneAddress).sort((left, right) => left.name.localeCompare(right.name)),
       services: Array.from(services.values()).map(cloneService).sort((left, right) => left.name.localeCompare(right.name)),
       routes: Array.from(routes.values()).map(cloneRoute).sort((left, right) => left.id - right.id),
@@ -602,7 +809,7 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
   }
 
   function ensurePolicy(id: number): FortiPolicyState {
-    const existing = policies.get(id);
+    const existing = policies.find((p) => p.id === id);
     if (existing) return existing;
     const created: FortiPolicyState = {
       id,
@@ -616,7 +823,7 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
       logtraffic: 'all',
       hitCount: 0,
     };
-    policies.set(id, created);
+    policies.push(created);
     return created;
   }
 
@@ -721,7 +928,7 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
       }
 
       if (matchesAbbreviation(tokens, ['show', 'firewall', 'policy'])) {
-        return { lines: formatPolicies(Array.from(policies.values())), prompt: getPrompt(), mode, shouldDisconnect: false };
+        return { lines: formatPolicies(policies), prompt: getPrompt(), mode, shouldDisconnect: false };
       }
 
       if (matchesAbbreviation(tokens, ['show', 'firewall', 'address'])) {
@@ -766,7 +973,7 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
           case 'system-interface':
             return { lines: formatInterfaces(Array.from(interfaces.values())), prompt: getPrompt(), mode, shouldDisconnect: false };
           case 'firewall-policy':
-            return { lines: formatPolicies(Array.from(policies.values())), prompt: getPrompt(), mode, shouldDisconnect: false };
+            return { lines: formatPolicies(policies), prompt: getPrompt(), mode, shouldDisconnect: false };
           case 'firewall-address':
             return { lines: formatAddresses(Array.from(addresses.values())), prompt: getPrompt(), mode, shouldDisconnect: false };
           case 'firewall-service-custom':
@@ -774,6 +981,36 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
           case 'router-static':
             return { lines: formatRoutes(Array.from(routes.values())), prompt: getPrompt(), mode, shouldDisconnect: false };
         }
+      }
+
+      if (mode.section === 'firewall-policy' && matchesCommandStart(tokens, ['move']) && rawTokens.length >= 4) {
+        const moveId = Number.parseInt(rawTokens[1], 10);
+        if (!Number.isInteger(moveId)) {
+          return { lines: ['Command fail. Return code -61'], prompt: getPrompt(), mode, shouldDisconnect: false };
+        }
+        const moveIdx = policies.findIndex((p) => p.id === moveId);
+        if (moveIdx === -1) {
+          return { lines: ['Command fail. Return code -61'], prompt: getPrompt(), mode, shouldDisconnect: false };
+        }
+
+        const direction = rawTokens[2].toLowerCase();
+        const targetId = Number.parseInt(rawTokens[3], 10);
+        if (!Number.isInteger(targetId) || (direction !== 'before' && direction !== 'after')) {
+          return { lines: ['Command fail. Return code -61'], prompt: getPrompt(), mode, shouldDisconnect: false };
+        }
+        const targetIdx = policies.findIndex((p) => p.id === targetId);
+        if (targetIdx === -1) {
+          return { lines: ['Command fail. Return code -61'], prompt: getPrompt(), mode, shouldDisconnect: false };
+        }
+
+        const [moved] = policies.splice(moveIdx, 1);
+        let insertIdx = direction === 'before' ? targetIdx : targetIdx + 1;
+        // If we removed before the target, adjust
+        if (moveIdx < targetIdx) {
+          insertIdx--;
+        }
+        policies.splice(insertIdx, 0, moved);
+        return { lines: [], prompt: getPrompt(), mode, shouldDisconnect: false };
       }
 
       if (matchesCommandStart(tokens, ['edit']) && rawTokens.length >= 2) {
@@ -1019,5 +1256,8 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
     },
     getPrompt,
     snapshot,
+    autocomplete(partialInput: string): string[] {
+      return autocompleteFor(mode, partialInput, interfaces, policies, addresses, services, routes);
+    },
   };
 }

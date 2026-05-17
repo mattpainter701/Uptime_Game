@@ -18,6 +18,7 @@ export interface MockCliSession {
   run(command: string): MockCliResult;
   getPrompt(): string;
   snapshot(): Record<string, unknown>;
+  autocomplete?(partialInput: string): string[];
 }
 
 /** Snapshot shape common to all vendors (hostname + vendor kind). */
