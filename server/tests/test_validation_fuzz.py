@@ -54,7 +54,9 @@ class TestValidationEngineFuzz:
             'params': self._random_params(random.choice(check_types)),
             'weight': random.uniform(0.1, 2.0),
             'required': random.choice([True, False]),
-            'convergence_delay_ms': random.randint(0, 5000),
+            # Keep fuzz validation fast enough for CI while still exercising
+            # convergence-delay handling. Dedicated tests below cover larger waits.
+            'convergence_delay_ms': random.randint(0, 20),
             'hint_on_fail': self._random_string(20) if random.random() > 0.5 else '',
             'anti_cheat': random.choice([True, False]),
         }
@@ -187,7 +189,7 @@ class TestValidationEngineFuzz:
             criteria = [self._random_criterion() for _ in range(random.randint(1, 5))]
 
             context = ValidationContext(
-                ticket_id=f"T-SCORE-{_}",
+                ticket_id=f"T-SCORE-{i}",
                 mock_cli_state={"R1": {"interfaces": {}, "show version": "OK"}},
                 eveng_available=False,
             )
