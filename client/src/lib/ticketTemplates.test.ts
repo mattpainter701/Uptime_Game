@@ -189,7 +189,7 @@ describe('ticketTemplates', () => {
     ]);
 
     expect(summary.totalTemplates).toBe(3);
-    expect(summary.categories).toHaveLength(7);
+    expect(summary.categories).toHaveLength(10);
 
     const routingSummary = summary.categories.find((entry) => entry.category === 'routing');
     expect(routingSummary).toBeDefined();
