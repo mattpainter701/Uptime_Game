@@ -111,3 +111,210 @@ describe('createFortiCli', () => {
     expect(invalid).toEqual(['Command fail. Return code -61']);
   });
 });
+
+describe('autocomplete', () => {
+  it('returns top-level exec commands on empty input', () => {
+    const cli = createFortiCli();
+    const completions = cli.autocomplete('');
+    expect(completions).toEqual(['config', 'diagnose', 'exit', 'get', 'show']);
+  });
+
+  it('completes partial top-level command to single match', () => {
+    const cli = createFortiCli();
+    expect(cli.autocomplete('sh')).toEqual(['show']);
+    expect(cli.autocomplete('con')).toEqual(['config']);
+    expect(cli.autocomplete('g')).toEqual(['get']);
+  });
+
+  it('completes second-level after trailing space (show subcommands)', () => {
+    const cli = createFortiCli();
+    const completions = cli.autocomplete('show ');
+    expect(completions).toEqual(['firewall', 'router', 'system']);
+  });
+
+  it('completes get subcommands', () => {
+    const cli = createFortiCli();
+    expect(cli.autocomplete('get ')).toEqual(['router', 'system']);
+  });
+
+  it('completes show firewall subcommands', () => {
+    const cli = createFortiCli();
+    const completions = cli.autocomplete('show firewall ');
+    expect(completions).toEqual(['address', 'policy', 'service']);
+  });
+
+  it('completes show firewall service to custom', () => {
+    const cli = createFortiCli();
+    expect(cli.autocomplete('show firewall service ')).toEqual(['custom']);
+  });
+
+  it('completes config system subcommands', () => {
+    const cli = createFortiCli();
+    const completions = cli.autocomplete('config system ');
+    expect(completions).toEqual(['global', 'interface']);
+  });
+
+  it('completes policy IDs after edit in firewall-policy section', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall policy');
+    // Default policy id=1 exists, plus we add id=5
+    cli.run('edit 5');
+    cli.run('next');
+    // Back in section mode
+    const completions = cli.autocomplete('edit ');
+    expect(completions).toEqual(['1', '5']);
+  });
+
+  it('completes set subcommands in edit mode', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall policy');
+    cli.run('edit 1');
+    const completions = cli.autocomplete('set ');
+    expect(completions).toEqual(['action', 'dstintf', 'logtraffic', 'name', 'nat', 'service', 'srcintf']);
+  });
+
+  it('completes set action values in policy edit mode', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall policy');
+    cli.run('edit 1');
+    expect(cli.autocomplete('set action ')).toEqual(['accept', 'deny']);
+  });
+
+  it('completes set nat values in policy edit mode', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall policy');
+    cli.run('edit 1');
+    expect(cli.autocomplete('set nat ')).toEqual(['disable', 'enable']);
+  });
+
+  it('completes set logtraffic values in policy edit mode', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall policy');
+    cli.run('edit 1');
+    expect(cli.autocomplete('set logtraffic ')).toEqual(['all', 'disable', 'utm']);
+  });
+
+  it('completes set status values in interface edit mode', () => {
+    const cli = createFortiCli();
+    cli.run('config system interface');
+    cli.run('edit port1');
+    expect(cli.autocomplete('set status ')).toEqual(['down', 'up']);
+  });
+
+  it('completes set protocol values in service edit mode', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall service custom');
+    cli.run('edit MY-SVC');
+    expect(cli.autocomplete('set protocol ')).toEqual(['TCP', 'TCP/UDP', 'UDP']);
+  });
+
+  it('completes set allowaccess values in interface edit mode', () => {
+    const cli = createFortiCli();
+    cli.run('config system interface');
+    cli.run('edit port1');
+    const completions = cli.autocomplete('set allowaccess ');
+    expect(completions).toEqual(['http', 'https', 'ping', 'snmp', 'ssh', 'telnet']);
+  });
+
+  it('returns empty array for unrecognized partial input', () => {
+    const cli = createFortiCli();
+    expect(cli.autocomplete('zzz')).toEqual([]);
+  });
+});
+
+describe('policy ordering', () => {
+  it('shows policies in insertion order by default', () => {
+    const cli = createFortiCli();
+    // Default policies have id=1
+    cli.run('config firewall policy');
+    cli.run('edit 5');
+    cli.run('set name policy-five');
+    cli.run('next');
+    cli.run('end');
+    // Show should list id=1 first (default), then id=5 (added later)
+    const lines = cli.run('show firewall policy').lines;
+    const policyLines = lines.filter((l) => /^\d/.test(l));
+    expect(policyLines[0]).toContain('LAN-to-WAN'); // id=1 first
+    expect(policyLines[1]).toContain('policy-five'); // id=5 second
+  });
+
+  it('move <id> before <ref-id> reorders policies', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall policy');
+    cli.run('edit 5');
+    cli.run('set name policy-five');
+    cli.run('next');
+    cli.run('move 5 before 1');
+    cli.run('end');
+
+    const lines = cli.run('show firewall policy').lines;
+    const policyLines = lines.filter((l) => /^\d/.test(l));
+    expect(policyLines[0]).toContain('policy-five'); // id=5 now first
+    expect(policyLines[1]).toContain('LAN-to-WAN');  // id=1 now second
+  });
+
+  it('move <id> after <ref-id> reorders policies', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall policy');
+    cli.run('edit 5');
+    cli.run('set name policy-five');
+    cli.run('next');
+    cli.run('edit 3');
+    cli.run('set name policy-three');
+    cli.run('next');
+    // Current order: 1, 5, 3
+    cli.run('move 1 after 5');
+    cli.run('end');
+
+    const lines = cli.run('show firewall policy').lines;
+    const policyLines = lines.filter((l) => /^\d/.test(l));
+    // Order should be: 5, 1, 3
+    expect(policyLines[0]).toContain('policy-five');
+    expect(policyLines[1]).toContain('LAN-to-WAN');
+    expect(policyLines[2]).toContain('policy-three');
+  });
+
+  it('move with nonexistent source ID returns error', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall policy');
+    const result = cli.run('move 99 before 1');
+    expect(result.lines).toEqual(['Command fail. Return code -61']);
+  });
+
+  it('move with nonexistent reference ID returns error', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall policy');
+    const result = cli.run('move 1 before 99');
+    expect(result.lines).toEqual(['Command fail. Return code -61']);
+  });
+
+  it('move with invalid relation returns error', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall policy');
+    const result = cli.run('move 1 somewhere 2');
+    expect(result.lines).toEqual(['Command fail. Return code -61']);
+  });
+
+  it('multiple moves accumulate correctly', () => {
+    const cli = createFortiCli();
+    cli.run('config firewall policy');
+    cli.run('edit 5');
+    cli.run('set name policy-five');
+    cli.run('next');
+    cli.run('edit 3');
+    cli.run('set name policy-three');
+    cli.run('next');
+    // Order: 1, 5, 3
+    cli.run('move 3 before 1');
+    // Order: 3, 1, 5
+    cli.run('move 5 before 3');
+    // Order: 5, 3, 1
+    cli.run('end');
+
+    const lines = cli.run('show firewall policy').lines;
+    const policyLines = lines.filter((l) => /^\d/.test(l));
+    expect(policyLines[0]).toContain('policy-five');
+    expect(policyLines[1]).toContain('policy-three');
+    expect(policyLines[2]).toContain('LAN-to-WAN');
+  });
+});
