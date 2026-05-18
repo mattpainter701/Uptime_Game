@@ -524,3 +524,115 @@ export interface CoffeeBoost {
   expiresAt: number | null; // timestamp
   timeAddedMinutes: number;
 }
+
+// === Sprint 7: Reward Economy and Upgrades ===
+
+// Shop system
+export type ShopCategory =
+  | 'office-upgrade'
+  | 'certification'
+  | 'tool'
+  | 'consumable'
+  | 'cosmetic'
+  | 'specialty';
+
+export type ShopItemId = string;
+
+export interface ShopItem {
+  id: ShopItemId;
+  name: string;
+  description: string;
+  category: ShopCategory;
+  cost: number;
+  requiredLevel: number;
+  icon: string;
+  buff?: BuffEffect;       // Permanent buff when owned
+  consumable?: BuffEffect;  // Temporary buff when activated
+  maxPurchases: number;     // Max times purchasable (1 for most, >1 for consumables)
+  officeUpgrade?: string;   // Office upgrade key for Sprint 8 3D rendering
+}
+
+export type BuffType =
+  | 'xp_multiplier'
+  | 'credit_multiplier'
+  | 'reputation_multiplier'
+  | 'time_extension'
+  | 'hint_discount'
+  | 'item_drop_bonus';
+
+export interface BuffEffect {
+  type: BuffType;
+  value: number;   // Multiplier (e.g. 1.25 = +25%) or flat value
+  isFlat: boolean; // true = flat addition, false = multiplier
+  duration?: number; // Seconds for consumable buffs; undefined = permanent
+}
+
+// Player's owned items and active buffs
+export interface PlayerShopState {
+  ownedItems: ShopItemId[];       // Set<string> serialized as array
+  activeConsumables: ActiveConsumable[];
+}
+
+export interface ActiveConsumable {
+  itemId: ShopItemId;
+  buff: BuffEffect;
+  activatedAt: number;   // timestamp
+  expiresAt: number;     // timestamp
+}
+
+// Prestige system
+export interface PrestigeLevel {
+  level: number;        // 1-10
+  name: string;
+  requiredCredits: number;
+  multiplier: number;   // Global reward multiplier
+  title: string;
+  icon: string;
+}
+
+export interface PlayerPrestigeState {
+  prestigeLevel: number;         // Current prestige (0 = not prestiged)
+  prestigeMultiplier: number;    // Current global multiplier
+  persistedUpgrades: ShopItemId[]; // Upgrades that survived prestige reset
+}
+
+// Daily challenges
+export type ChallengeType =
+  | 'complete_tickets'
+  | 'reach_uptime'
+  | 'earn_credits'
+  | 'earn_xp'
+  | 'buy_items'
+  | 'use_hints'
+  | 'visit_floors'
+  | 'talk_to_npcs'
+  | 'fix_incidents'
+  | 'complete_category';
+
+export interface DailyChallenge {
+  id: string;
+  type: ChallengeType;
+  description: string;
+  target: number;      // How many to complete
+  rewardCredits: number;
+  rewardXp: number;
+  progress: number;    // Current progress
+  completed: boolean;
+  claimed: boolean;    // Reward claimed?
+}
+
+export interface DailyChallengeState {
+  date: string;              // UTC date string YYYY-MM-DD
+  challenges: DailyChallenge[];
+  lastGenerated: number;     // timestamp of last generation
+}
+
+// Computed buff state used in reward calculations
+export interface ComputedBuffs {
+  xpMultiplier: number;
+  creditMultiplier: number;
+  reputationMultiplier: number;
+  timeExtensionMinutes: number;
+  hintDiscountPercent: number;
+  itemDropBonus: number;
+}
