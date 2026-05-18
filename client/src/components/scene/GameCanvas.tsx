@@ -4,6 +4,7 @@ import { OrbitControls, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import { Building } from './Building';
 import { Lighting } from './Lighting';
+import { AmbientSound } from './AmbientSound';
 import { useGameStore } from '../../store/gameStore';
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib';
 
@@ -89,6 +90,9 @@ function CameraController() {
 export function GameCanvas() {
   return (
     <div className="absolute inset-0">
+      {/* Sprint 8: Ambient sound system */}
+      <AmbientSound />
+
       <Canvas
         shadows
         camera={{

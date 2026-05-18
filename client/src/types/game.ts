@@ -401,3 +401,126 @@ export interface SandboxSolutionStep {
 }
 
 export type ApplianceType = 'router' | 'switch' | 'firewall' | 'linux' | 'general';
+
+// === Sprint 8: 3D Office Environment Expansion ===
+
+// Floor system expanded to 8 career-gated floors
+export type FloorId =
+  | 'basement'   // Career level 1: Help Desk Tech
+  | 'lobby'      // Career level 2: Junior NetAdmin
+  | 'floor1'     // Career level 3: Network Admin (Cubicle)
+  | 'floor2'     // Career level 4: Senior NetAdmin (Cubicle)
+  | 'floor3'     // Career level 5: Network Engineer (Datacenter)
+  | 'floor4'     // Career level 6: Senior Engineer
+  | 'floor5'     // Career level 7: Principal Engineer
+  | 'penthouse'; // Career level 8: CTO
+
+export interface FloorInfo {
+  id: FloorId;
+  name: string;
+  label: string;
+  requiredLevel: number; // Career level required to access
+  theme: string;
+}
+
+export const FLOOR_DEFINITIONS: FloorInfo[] = [
+  { id: 'basement',  name: 'Basement',      label: 'B - My Office',    requiredLevel: 1, theme: 'Personal office with modern desk setup' },
+  { id: 'lobby',     name: 'Main Floor',    label: 'L - Lobby',        requiredLevel: 2, theme: 'Reception and security checkpoint' },
+  { id: 'floor1',    name: 'Floor 1',       label: '1 - Cubicles',     requiredLevel: 3, theme: 'Open-plan cubicle farm, Network Admin' },
+  { id: 'floor2',    name: 'Floor 2',       label: '2 - Cubicles',     requiredLevel: 4, theme: 'Senior cubicle section, Senior NetAdmin' },
+  { id: 'floor3',    name: 'Floor 3',       label: '3 - Datacenter',   requiredLevel: 5, theme: 'Server racks and cooling, Network Engineer' },
+  { id: 'floor4',    name: 'Floor 4',       label: '4 - Engineering',  requiredLevel: 6, theme: 'Engineering lab with test benches, Senior Engineer' },
+  { id: 'floor5',    name: 'Floor 5',       label: '5 - Architecture', requiredLevel: 7, theme: 'Glass-walled architecture studio, Principal Engineer' },
+  { id: 'penthouse', name: 'Penthouse',     label: 'PH - Penthouse',   requiredLevel: 8, theme: 'Executive suite with skyline view, CTO' },
+];
+
+// NPC System
+export type NPCRole = 'manager' | 'coworker' | 'helpdesk';
+
+export interface NPCDialogueLine {
+  text: string;
+  responses?: NPCDialogueResponse[];
+}
+
+export interface NPCDialogueResponse {
+  text: string;
+  action?: NPCAction;
+  nextLineIndex?: number;
+}
+
+export type NPCAction = 'give_hint' | 'give_credits' | 'coffee_boost' | 'motivate' | 'none';
+
+export interface NPCState {
+  id: string;
+  role: NPCRole;
+  name: string;
+  floorId: FloorId;
+  position: [number, number, number];
+  rotation: number;
+  currentDialogueIndex: number;
+  spokenToday: boolean;
+  dialogueTree: NPCDialogueLine[];
+}
+
+export interface NPCDialogueState {
+  activeNpcId: string | null;
+  currentLineIndex: number;
+  isOpen: boolean;
+}
+
+// Interactive Objects
+export type InteractiveObjectType = 'coffee_machine' | 'whiteboard' | 'server_rack';
+
+export interface InteractiveObjectState {
+  id: string;
+  type: InteractiveObjectType;
+  floorId: FloorId;
+  position: [number, number, number];
+  label: string;
+  hint: string;
+  cooldownMs: number;
+  lastUsedAt: number | null;
+}
+
+// Weather system
+export type WeatherType = 'clear' | 'rain' | 'storm';
+
+export interface WeatherState {
+  current: WeatherType;
+  intensity: number; // 0-1
+  nextChangeAt: number; // timestamp
+  lightningFlash: boolean;
+}
+
+// Ambient sound system
+export type AmbientSoundType = 'office_hum' | 'rain' | 'thunder' | 'keyboard' | 'server_fans' | 'elevator_ding';
+
+export interface AmbientSoundState {
+  enabled: boolean;
+  activeSounds: AmbientSoundType[];
+}
+
+// Desk customization (state only — visual integration deferred)
+export type DeskDecoration =
+  | 'default'
+  | 'plant_small'
+  | 'action_figure'
+  | 'nameplate'
+  | 'rgb_strip'
+  | 'coffee_mug_gold'
+  | 'certificate_frame'
+  | 'mini_server';
+
+export interface DeskCustomization {
+  decoration: DeskDecoration;
+  deskColor: string;   // hex color
+  chairColor: string;  // hex color
+  monitorCount: 1 | 2 | 3;
+}
+
+// Coffee boost effect
+export interface CoffeeBoost {
+  active: boolean;
+  expiresAt: number | null; // timestamp
+  timeAddedMinutes: number;
+}
