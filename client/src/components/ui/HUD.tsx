@@ -50,10 +50,28 @@ const FLOOR_DISPLAY_NAMES: Record<string, string> = {
   'floor1': '1',
   'floor2': '2',
   'floor3': '3',
+  'floor4': '4',
+  'floor5': '5',
+  'penthouse': 'PH',
+};
+
+const WEATHER_ICONS: Record<string, string> = {
+  'clear': '☀️',
+  'rain': '🌧️',
+  'storm': '⛈️',
+};
+
+const TIME_LABELS: Record<string, string> = {
+  'night': '🌙',
+  'morning': '🌅',
+  'afternoon': '☀️',
+  'evening': '🌆',
 };
 
 export function HUD() {
-  const { player, activeTicket, currentView, setView, uptime, failTicket, playerPosition, currentFloor, sandboxState, enterSandbox } = useGameStore();
+  const { player, activeTicket, currentView, setView, uptime, failTicket, playerPosition, currentFloor, sandboxState, enterSandbox, weather, timeOfDay, coffeeBoost } = useGameStore();
+
+  const timePeriod = timeOfDay < 6 ? 'night' : timeOfDay < 10 ? 'morning' : timeOfDay < 17 ? 'afternoon' : timeOfDay < 20 ? 'evening' : 'night';
 
   return (
     <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none" role="banner" aria-label="Heads-up display">
@@ -155,6 +173,31 @@ export function HUD() {
           </div>
 
           <div className="w-px h-8 bg-gray-600" />
+
+          {/* Weather / Time */}
+          <div className="flex items-center gap-2">
+            <span className="text-xl">{WEATHER_ICONS[weather.current] || '☀️'}</span>
+            <div>
+              <div className="text-xs text-gray-400">{weather.current}</div>
+              <div className="text-sm font-bold text-white">{TIME_LABELS[timePeriod]} {timeOfDay}:00</div>
+            </div>
+          </div>
+
+          <div className="w-px h-8 bg-gray-600" />
+
+          {/* Coffee boost */}
+          {coffeeBoost.active && (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">☕</span>
+                <div>
+                  <div className="text-xs text-gray-400">Coffee</div>
+                  <div className="text-sm font-bold text-orange-400">BOOST</div>
+                </div>
+              </div>
+              <div className="w-px h-8 bg-gray-600" />
+            </>
+          )}
 
           {/* Save */}
           <SaveIndicator />

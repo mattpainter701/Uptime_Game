@@ -3,3 +3,8 @@ export { Lighting } from './Lighting';
 export { GameCanvas } from './GameCanvas';
 export { Character } from './Character';
 export { PlayerController } from './PlayerController';
+export { Building } from './Building';
+export { InteractiveObjects } from './InteractiveObjects';
+export { NPC } from './NPC';
+export { WeatherEffects } from './WeatherEffects';
+export { AmbientSound } from './AmbientSound';

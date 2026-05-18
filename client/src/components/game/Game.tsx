@@ -10,7 +10,7 @@ import { SessionSummaryScreen } from '../ui/SessionSummaryScreen';
 import { TutorialOverlay } from '../ui/TutorialOverlay';
 import { SandboxLabBrowser } from '../ui/SandboxLabBrowser';
 import { ShortcutReference } from '../ui/ShortcutReference';
-import { FLOORS } from '../scene/Building';
+import type { FloorId } from '../../types/game';
 
 function OfficeView() {
   return (
@@ -593,8 +593,7 @@ export function Game() {
       <ElevatorPanel
         isOpen={elevatorOpen}
         currentFloor={currentFloor}
-        floors={FLOORS}
-        onSelectFloor={setCurrentFloor}
+        onSelectFloor={(floorId: FloorId) => setCurrentFloor(floorId)}
         onClose={closeElevator}
       />
 

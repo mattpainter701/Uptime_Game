@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId, SessionState, SessionRecord, TutorialState, TutorialStep, SandboxState } from '../types/game';
+import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId, SessionState, SessionRecord, TutorialState, TutorialStep, SandboxState, FloorId, NPCState, NPCDialogueState, InteractiveObjectState, WeatherState, WeatherType, AmbientSoundState, DeskCustomization, CoffeeBoost } from '../types/game';
 import { ITEM_DEFINITIONS, TUTORIAL_STEP_ORDER } from '../types/game';
 import { getCareerLevelFromXp, getXpToNextCareerLevel } from '../lib/careerProgression';
 import { getReputationLossForFailure } from '../lib/reputationProgression';
@@ -48,7 +48,7 @@ interface GameState {
   movement: MovementState;
 
   // Building/Elevator state
-  currentFloor: 'basement' | 'lobby' | 'floor1' | 'floor2' | 'floor3';
+  currentFloor: FloorId;
   elevatorOpen: boolean;
 
   // Inventory
@@ -70,6 +70,25 @@ interface GameState {
   // Sandbox state
   sandboxState: SandboxState;
   careerSnapshot: string | null; // JSON snapshot of career state when entering sandbox
+
+  // Sprint 8: NPC system
+  npcs: NPCState[];
+  npcDialogue: NPCDialogueState;
+
+  // Sprint 8: Interactive objects
+  interactiveObjects: InteractiveObjectState[];
+
+  // Sprint 8: Weather
+  weather: WeatherState;
+
+  // Sprint 8: Ambient sound
+  ambientSound: AmbientSoundState;
+
+  // Sprint 8: Desk customization
+  deskCustomization: DeskCustomization;
+
+  // Sprint 8: Coffee boost
+  coffeeBoost: CoffeeBoost;
 
   // Actions
   setView: (view: GameView) => void;
@@ -113,7 +132,7 @@ interface GameState {
   toggleStand: () => void;
 
   // Elevator actions
-  setCurrentFloor: (floor: 'basement' | 'lobby' | 'floor1' | 'floor2' | 'floor3') => void;
+  setCurrentFloor: (floor: FloorId) => void;
   openElevator: () => void;
   closeElevator: () => void;
 
@@ -153,6 +172,32 @@ interface GameState {
   toggleSandboxSolution: () => void;
   toggleSandboxDiff: () => void;
   resetSandboxLab: () => void;
+
+  // Sprint 8: NPC actions
+  startNpcDialogue: (npcId: string) => void;
+  advanceNpcDialogue: (responseIndex?: number) => void;
+  closeNpcDialogue: () => void;
+  resetNpcDaily: () => void;
+
+  // Sprint 8: Interactive object actions
+  useInteractiveObject: (objectId: string) => string;
+  canUseInteractiveObject: (objectId: string) => boolean;
+
+  // Sprint 8: Weather actions
+  updateWeather: () => void;
+  setWeather: (type: WeatherType) => void;
+
+  // Sprint 8: Ambient sound actions
+  toggleAmbientSound: () => void;
+  setActiveSounds: (sounds: AmbientSoundState['activeSounds']) => void;
+
+  // Sprint 8: Desk customization actions
+  setDeskDecoration: (decoration: DeskCustomization['decoration']) => void;
+  setDeskColor: (color: string) => void;
+
+  // Sprint 8: Coffee boost
+  useCoffeeBoost: () => void;
+  checkCoffeeBoost: () => void;
 }
 
 // Sample tickets for demo
@@ -387,6 +432,97 @@ const SAMPLE_TICKETS: Ticket[] = [
 ];
 
 
+// Sprint 8: NPC definitions
+const NPC_DEFINITIONS: NPCState[] = [
+  {
+    id: 'npc-manager-1', role: 'manager', name: 'Sarah Chen', floorId: 'lobby',
+    position: [3, 0, -2], rotation: -Math.PI / 2,
+    currentDialogueIndex: 0, spokenToday: false,
+    dialogueTree: [
+      { text: "Hey! Good to see you on the floor. The CTO's been asking about uptime metrics.", responses: [
+        { text: "I'm on it. Any specific numbers he wants?", action: 'give_credits', nextLineIndex: 1 },
+        { text: "I'll get to it later.", action: 'none', nextLineIndex: 2 },
+      ]},
+      { text: "He wants to see 99.9% across the board this quarter. Here's a bonus for the initiative." },
+      { text: "Don't let it slide too long - the board meeting is Friday." },
+    ],
+  },
+  {
+    id: 'npc-coworker-1', role: 'coworker', name: 'Mike Torres', floorId: 'floor1',
+    position: [-2, 0, 3], rotation: Math.PI / 4,
+    currentDialogueIndex: 0, spokenToday: false,
+    dialogueTree: [
+      { text: "Rough morning - the core switch in VLAN 20 keeps flapping. Seen anything like that?", responses: [
+        { text: "Check the spanning-tree priorities. Could be a root bridge election loop.", action: 'motivate', nextLineIndex: 1 },
+        { text: "Haven't seen it - good luck though.", action: 'none', nextLineIndex: 2 },
+      ]},
+      { text: "Good call! I'll check that now. Thanks for the tip!" },
+      { text: "No worries, I'll figure it out." },
+    ],
+  },
+  {
+    id: 'npc-helpdesk-1', role: 'helpdesk', name: 'Alex Rivera', floorId: 'floor2',
+    position: [1, 0, -4], rotation: 0,
+    currentDialogueIndex: 0, spokenToday: false,
+    dialogueTree: [
+      { text: "Hey! I've got a ticket about a user who can't reach the file server. Mind if I shadow you?", responses: [
+        { text: "Sure, I'll walk you through the troubleshooting steps.", action: 'give_hint', nextLineIndex: 1 },
+        { text: "Maybe later - I'm swamped right now.", action: 'none', nextLineIndex: 2 },
+      ]},
+      { text: "Amazing! So I should first check the default gateway, then work my way up?" },
+      { text: "No problem - I'll try to figure it out myself." },
+    ],
+  },
+  {
+    id: 'npc-manager-2', role: 'manager', name: 'David Park', floorId: 'floor4',
+    position: [-3, 0, 0], rotation: Math.PI,
+    currentDialogueIndex: 0, spokenToday: false,
+    dialogueTree: [
+      { text: "Welcome to the engineering floor! We're working on the new SD-WAN rollout. Want to review the architecture?", responses: [
+        { text: "Absolutely - show me the topology.", action: 'give_credits', nextLineIndex: 1 },
+        { text: "I'll check it out later.", action: 'none', nextLineIndex: 2 },
+      ]},
+      { text: "Here's a diagram of the new hub-and-spoke layout. Credits for helping with the review!" },
+      { text: "The docs are on the shared drive whenever you're ready." },
+    ],
+  },
+  {
+    id: 'npc-coworker-2', role: 'coworker', name: 'Priya Patel', floorId: 'floor5',
+    position: [2, 0, -1], rotation: -Math.PI / 3,
+    currentDialogueIndex: 0, spokenToday: false,
+    dialogueTree: [
+      { text: "I'm designing the new multi-region BGP topology. Could use a second pair of eyes on the route maps.", responses: [
+        { text: "Let me take a look. Route maps can be tricky with multiple AS paths.", action: 'motivate', nextLineIndex: 1 },
+        { text: "I trust your judgment - you've got this.", action: 'none', nextLineIndex: 2 },
+      ]},
+      { text: "Thanks! That's exactly what I was worried about. I'll add the AS-path prepend." },
+      { text: "Appreciate the confidence! I'll run it by the lab first." },
+    ],
+  },
+  {
+    id: 'npc-helpdesk-2', role: 'helpdesk', name: 'Jasmine Wu', floorId: 'penthouse',
+    position: [-2, 0, 1], rotation: Math.PI / 2,
+    currentDialogueIndex: 0, spokenToday: false,
+    dialogueTree: [
+      { text: "Wow, the penthouse view is incredible! The CTO asked me to set up the executive dashboard. Any tips?", responses: [
+        { text: "Focus on the top-5 KPIs: uptime, MTTR, incident count, SLA compliance, and throughput.", action: 'give_hint', nextLineIndex: 1 },
+        { text: "Keep it simple - the execs just want green lights.", action: 'none', nextLineIndex: 2 },
+      ]},
+      { text: "Great advice! I'll build the dashboard around those five metrics. Here's a coffee on me!", action: 'coffee_boost', nextLineIndex: 3 },
+      { text: "Makes sense. I'll keep it at a high level.", nextLineIndex: 3 },
+      { text: "See you around the tower!" },
+    ],
+  },
+];
+
+// Sprint 8: Interactive object definitions
+const INTERACTIVE_OBJECT_DEFINITIONS: InteractiveObjectState[] = [
+  { id: 'obj-coffee-lobby', type: 'coffee_machine', floorId: 'lobby', position: [-3.5, 0.7, -3.5], label: 'Coffee Machine', hint: 'Grants +2 minutes to active ticket timer', cooldownMs: 300000, lastUsedAt: null },
+  { id: 'obj-coffee-floor1', type: 'coffee_machine', floorId: 'floor1', position: [3, 0.7, -3], label: 'Coffee Machine', hint: 'Grants +2 minutes to active ticket timer', cooldownMs: 300000, lastUsedAt: null },
+  { id: 'obj-whiteboard-floor4', type: 'whiteboard', floorId: 'floor4', position: [-3, 1.2, -2], label: 'Engineering Whiteboard', hint: 'Review architecture diagrams - reveals a free hint', cooldownMs: 600000, lastUsedAt: null },
+  { id: 'obj-serverrack-floor3', type: 'server_rack', floorId: 'floor3', position: [3.5, 1, 3], label: 'Server Rack', hint: 'Check server status - earn bonus credits if all green', cooldownMs: 600000, lastUsedAt: null },
+];
+
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
@@ -502,6 +638,25 @@ export const useGameStore = create<GameState>()(
         showDiff: false,
       },
       careerSnapshot: null,
+
+      // Sprint 8: NPC system
+      npcs: NPC_DEFINITIONS,
+      npcDialogue: { activeNpcId: null, currentLineIndex: 0, isOpen: false },
+
+      // Sprint 8: Interactive objects
+      interactiveObjects: INTERACTIVE_OBJECT_DEFINITIONS,
+
+      // Sprint 8: Weather
+      weather: { current: 'clear', intensity: 0, nextChangeAt: Date.now() + 300000, lightningFlash: false },
+
+      // Sprint 8: Ambient sound
+      ambientSound: { enabled: true, activeSounds: [] },
+
+      // Sprint 8: Desk customization
+      deskCustomization: { decoration: 'default', deskColor: '#f0f0f0', chairColor: '#2d2d2d', monitorCount: 3 },
+
+      // Sprint 8: Coffee boost
+      coffeeBoost: { active: false, expiresAt: null, timeAddedMinutes: 2 },
 
       // View actions
       setView: (view) => set({ currentView: view }),
@@ -1076,7 +1231,13 @@ export const useGameStore = create<GameState>()(
             sessionHistory: state.sessionHistory,
             tutorial: state.tutorial,
             sandboxState: state.sandboxState,
-            _saveVersion: 4,
+            npcs: state.npcs,
+            interactiveObjects: state.interactiveObjects,
+            weather: state.weather,
+            ambientSound: state.ambientSound,
+            deskCustomization: state.deskCustomization,
+            coffeeBoost: state.coffeeBoost,
+            _saveVersion: 5,
           };
           localStorage.setItem('netops-tower-save', JSON.stringify({
             state: saveData,
@@ -1158,6 +1319,13 @@ export const useGameStore = create<GameState>()(
             tutorial: { active: false, step: 'welcome', skipped: false, graduationShown: false },
             sandboxState: { active: false, activeLabId: null, showSolution: false, showDiff: false },
             careerSnapshot: null,
+            npcs: NPC_DEFINITIONS,
+            npcDialogue: { activeNpcId: null, currentLineIndex: 0, isOpen: false },
+            interactiveObjects: INTERACTIVE_OBJECT_DEFINITIONS,
+            weather: { current: 'clear', intensity: 0, nextChangeAt: Date.now() + 300000, lightningFlash: false },
+            ambientSound: { enabled: true, activeSounds: [] },
+            deskCustomization: { decoration: 'default', deskColor: '#f0f0f0', chairColor: '#2d2d2d', monitorCount: 3 },
+            coffeeBoost: { active: false, expiresAt: null, timeAddedMinutes: 2 },
           };
 
           for (const [key, defaultValue] of Object.entries(defaults)) {
@@ -1184,6 +1352,13 @@ export const useGameStore = create<GameState>()(
             sessionHistory: savedState.sessionHistory || [],
             tutorial: savedState.tutorial || { active: false, step: 'welcome', skipped: false, graduationShown: false },
             sandboxState: savedState.sandboxState || { active: false, activeLabId: null, showSolution: false, showDiff: false },
+            npcs: savedState.npcs || NPC_DEFINITIONS,
+            npcDialogue: savedState.npcDialogue || { activeNpcId: null, currentLineIndex: 0, isOpen: false },
+            interactiveObjects: savedState.interactiveObjects || INTERACTIVE_OBJECT_DEFINITIONS,
+            weather: savedState.weather || { current: 'clear', intensity: 0, nextChangeAt: Date.now() + 300000, lightningFlash: false },
+            ambientSound: savedState.ambientSound || { enabled: true, activeSounds: [] },
+            deskCustomization: savedState.deskCustomization || { decoration: 'default', deskColor: '#f0f0f0', chairColor: '#2d2d2d', monitorCount: 3 },
+            coffeeBoost: savedState.coffeeBoost || { active: false, expiresAt: null, timeAddedMinutes: 2 },
             uptime: savedState.uptime || {
               sessionId: null, isTracking: false, startedAt: null,
               nodes: {}, totalUptimeSeconds: 0, totalDowntimeSeconds: 0,
@@ -1242,7 +1417,7 @@ export const useGameStore = create<GameState>()(
           sandboxState: state.sandboxState,
           _saveVersion: 4,
         };
-        return JSON.stringify({ state: saveData, version: 4, exportedAt: new Date().toISOString() }, null, 2);
+        return JSON.stringify({ state: saveData, version: 5, exportedAt: new Date().toISOString() }, null, 2);
       },
 
       importSave: (json: string) => {
@@ -1519,28 +1694,116 @@ export const useGameStore = create<GameState>()(
       resetSandboxLab: () => {
         const { sandboxState } = get();
         if (!sandboxState.activeLabId) return;
-
-        // Reset: clear active ticket and re-open the same lab
         const labId = sandboxState.activeLabId;
         const lab = SAMPLE_TICKETS.find(t => t.id === labId);
         if (!lab) return;
-
-        // Reset hints to unrevealed
-        const freshLab = {
-          ...lab,
-          hints: lab.hints.map(h => ({ ...h, revealed: false })),
-        };
-
+        const freshLab = { ...lab, hints: lab.hints.map(h => ({ ...h, revealed: false })) };
         get().stopTicketTimer();
         set({
           activeTicket: { ...freshLab, status: 'active', startedAt: Date.now() },
           sandboxState: { ...sandboxState, showSolution: false, showDiff: false },
         });
       },
+
+      // === Sprint 8: NPC Actions ===
+      startNpcDialogue: (npcId) => {
+        const npc = get().npcs.find(n => n.id === npcId);
+        if (!npc) return;
+        set({ npcDialogue: { activeNpcId: npcId, currentLineIndex: npc.currentDialogueIndex, isOpen: true } });
+        set((s) => ({ npcs: s.npcs.map(n => n.id === npcId ? { ...n, spokenToday: true } : n) }));
+      },
+
+      advanceNpcDialogue: (responseIndex) => {
+        const { npcDialogue, npcs } = get();
+        if (!npcDialogue.activeNpcId) return;
+        const npc = npcs.find(n => n.id === npcDialogue.activeNpcId);
+        if (!npc) return;
+        const line = npc.dialogueTree[npcDialogue.currentLineIndex];
+        if (!line) { get().closeNpcDialogue(); return; }
+        if (responseIndex !== undefined && line.responses?.[responseIndex]) {
+          const r = line.responses[responseIndex];
+          if (r.action === 'give_hint') { const t = get().activeTicket; if (t) { const i = t.hints.findIndex(h => !h.revealed); if (i >= 0) get().revealHint(i); } }
+          else if (r.action === 'give_credits') get().addCredits(50);
+          else if (r.action === 'coffee_boost') get().useCoffeeBoost();
+          else if (r.action === 'motivate') get().addXp(25);
+          if (r.nextLineIndex !== undefined) set({ npcDialogue: { ...npcDialogue, currentLineIndex: r.nextLineIndex } });
+          else get().closeNpcDialogue();
+        } else get().closeNpcDialogue();
+      },
+
+      closeNpcDialogue: () => set({ npcDialogue: { activeNpcId: null, currentLineIndex: 0, isOpen: false } }),
+      resetNpcDaily: () => set((s) => ({ npcs: s.npcs.map(n => ({ ...n, spokenToday: false })) })),
+
+      // === Sprint 8: Interactive Objects ===
+      useInteractiveObject: (objectId) => {
+        const obj = get().interactiveObjects.find(o => o.id === objectId);
+        if (!obj) return 'Object not found';
+        const now = Date.now();
+        if (obj.lastUsedAt && (now - obj.lastUsedAt) < obj.cooldownMs) {
+          return 'On cooldown - ' + Math.ceil((obj.cooldownMs - (now - obj.lastUsedAt)) / 1000) + 's remaining';
+        }
+        set((s) => ({ interactiveObjects: s.interactiveObjects.map(o => o.id === objectId ? { ...o, lastUsedAt: now } : o) }));
+        switch (obj.type) {
+          case 'coffee_machine': get().useCoffeeBoost(); return 'Coffee boost active! +2 minutes added to ticket timer.';
+          case 'whiteboard': {
+            const t = get().activeTicket;
+            if (t) { const i = t.hints.findIndex(h => !h.revealed); if (i >= 0) { get().revealHint(i); return 'Whiteboard reviewed! A hint has been revealed.'; } return 'All hints already revealed.'; }
+            return 'No active ticket.';
+          }
+          case 'server_rack': {
+            const u = get().uptime;
+            const green = Object.values(u.nodes).every(n => n.isResponsive);
+            if (green && Object.keys(u.nodes).length > 0) { get().addCredits(75); return 'All servers green! +75 bonus credits.'; }
+            return 'Server status checked.';
+          }
+          default: return 'Used ' + obj.label;
+        }
+      },
+
+      canUseInteractiveObject: (objectId) => {
+        const obj = get().interactiveObjects.find(o => o.id === objectId);
+        if (!obj || !obj.lastUsedAt) return true;
+        return (Date.now() - obj.lastUsedAt) >= obj.cooldownMs;
+      },
+
+      // === Sprint 8: Weather ===
+      updateWeather: () => {
+        const now = Date.now();
+        if (now < get().weather.nextChangeAt) return;
+        const { timeOfDay } = get();
+        const rand = Math.random();
+        const night = timeOfDay < 6 || timeOfDay > 18;
+        let w, i;
+        if (night && rand < 0.3) { w = 'storm'; i = 0.5 + Math.random() * 0.5; }
+        else if (rand < 0.25) { w = 'rain'; i = 0.2 + Math.random() * 0.6; }
+        else { w = 'clear'; i = 0; }
+        set({ weather: { current: w, intensity: i, nextChangeAt: now + 120000 + Math.random() * 300000, lightningFlash: false } });
+      },
+
+      setWeather: (type) => set((s) => ({ weather: { ...s.weather, current: type, intensity: type === 'clear' ? 0 : 0.5, nextChangeAt: Date.now() + 600000 } })),
+
+      // === Sprint 8: Ambient Sound ===
+      toggleAmbientSound: () => set((s) => ({ ambientSound: { ...s.ambientSound, enabled: !s.ambientSound.enabled } })),
+      setActiveSounds: (sounds) => set((s) => ({ ambientSound: { ...s.ambientSound, activeSounds: sounds } })),
+
+      // === Sprint 8: Desk Customization ===
+      setDeskDecoration: (decoration) => set((s) => ({ deskCustomization: { ...s.deskCustomization, decoration } })),
+      setDeskColor: (color) => set((s) => ({ deskCustomization: { ...s.deskCustomization, deskColor: color } })),
+
+      // === Sprint 8: Coffee Boost ===
+      useCoffeeBoost: () => {
+        set({ coffeeBoost: { active: true, expiresAt: Date.now(), timeAddedMinutes: 2 } });
+        const { activeTicket, ticketTimeRemaining } = get();
+        if (activeTicket && ticketTimeRemaining !== null && ticketTimeRemaining > 0) {
+          set({ ticketTimeRemaining: ticketTimeRemaining + 2 * 60 * 1000 });
+        }
+      },
+
+      checkCoffeeBoost: () => {},
     }),
     {
       name: 'netops-tower-save',
-      version: 4,
+      version: 5,
       migrate: (persistedState: any, _version: number) => {
         // Migration v0 → v1: old format only had player, settings, inventory
         // Fill in defaults for all the new fields introduced in v1
@@ -1587,6 +1850,16 @@ export const useGameStore = create<GameState>()(
           };
           persistedState.careerSnapshot = persistedState.careerSnapshot ?? null;
         }
+        // Migration v4 -> v5: add Sprint 8 fields
+        if (_version < 5) {
+          persistedState.npcs = NPC_DEFINITIONS;
+          persistedState.npcDialogue = { activeNpcId: null, currentLineIndex: 0, isOpen: false };
+          persistedState.interactiveObjects = INTERACTIVE_OBJECT_DEFINITIONS;
+          persistedState.weather = { current: 'clear', intensity: 0, nextChangeAt: Date.now() + 300000, lightningFlash: false };
+          persistedState.ambientSound = { enabled: true, activeSounds: [] };
+          persistedState.deskCustomization = { decoration: 'default', deskColor: '#f0f0f0', chairColor: '#2d2d2d', monitorCount: 3 };
+          persistedState.coffeeBoost = { active: false, expiresAt: null, timeAddedMinutes: 2 };
+        }
         return persistedState;
       },
       partialize: (state) => ({
@@ -1603,18 +1876,17 @@ export const useGameStore = create<GameState>()(
         connectedNodeId: state.connectedNodeId,
         playerPosition: state.playerPosition,
         lastSavedAt: Date.now(),
-        // Save uptime state data but mark as not-tracking (WS reconnects on load)
-        uptime: {
-          ...state.uptime,
-          isTracking: false,
-          sessionId: null,
-        },
-        // Session history persistence
+        uptime: { ...state.uptime, isTracking: false, sessionId: null },
         sessionHistory: state.sessionHistory,
-        // Tutorial state persistence
         tutorial: state.tutorial,
-        // Sandbox state persistence (careerSnapshot is transient)
         sandboxState: state.sandboxState,
+        // Sprint 8 persistence
+        npcs: state.npcs,
+        interactiveObjects: state.interactiveObjects,
+        weather: state.weather,
+        ambientSound: state.ambientSound,
+        deskCustomization: state.deskCustomization,
+        coffeeBoost: state.coffeeBoost,
       }),
       onRehydrateStorage: () => {
         return (hydratedState, error) => {
