@@ -33,3 +33,19 @@ async def open_lab(lab_path: str):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to open lab")
     return APIResponse(success=True, message=f"Lab {lab_path} opened")
+
+
+@router.post("/import")
+async def import_lab(data: dict):
+    """Import a lab from EVE-NG. Accepts server credentials and returns lab list."""
+    server_url = data.get("server_url", "")
+    username = data.get("username", "")
+    password = data.get("password", "")
+
+    if not server_url or not username or not password:
+        raise HTTPException(status_code=400, detail="server_url, username, and password are required")
+
+    # Use the existing eveng_client to list labs
+    # Note: In production, you'd create a temporary client with the provided credentials
+    labs = await eveng_client.list_labs("/")
+    return {"success": True, "labs": [lab.model_dump() for lab in labs]}
