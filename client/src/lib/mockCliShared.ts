@@ -18,6 +18,8 @@ export interface MockCliSession {
   run(command: string): MockCliResult;
   getPrompt(): string;
   snapshot(): Record<string, unknown>;
+  /** Tab-completion: returns candidate completions for the partial input. */
+  autocomplete?(input: string): string[];
 }
 
 /** Snapshot shape common to all vendors (hostname + vendor kind). */

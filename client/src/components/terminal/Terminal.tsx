@@ -282,6 +282,31 @@ export function Terminal({
       if (code === 13) { // Enter
         processCommand(term, currentInput);
         currentInput = '';
+      } else if (code === 9) { // Tab
+        if (cliRef.current.autocomplete) {
+          const completions = cliRef.current.autocomplete(currentInput);
+          if (completions.length === 1) {
+            // Auto-fill single completion
+            const trimmed = currentInput.trimEnd();
+            const tokens = trimmed.length === 0 ? [] : trimmed.split(/\s+/);
+            const trailingSpace = /\s$/.test(currentInput);
+            const lastPartial = trailingSpace ? '' : (tokens[tokens.length - 1] ?? '');
+            const suffix = completions[0].slice(lastPartial.length);
+            currentInput += suffix;
+            term.write(suffix);
+            // If we were completing a token (no trailing space), add a space for the next arg
+            if (!trailingSpace && tokens.length > 0) {
+              currentInput += ' ';
+              term.write(' ');
+            }
+          } else if (completions.length > 1) {
+            // Show completions list
+            term.write('\r\n' + completions.join('  ') + '\r\n');
+            writePrompt(term, cliRef.current.getPrompt());
+            term.write(currentInput);
+          }
+          // 0 completions: silent (no beep)
+        }
       } else if (code === 127) { // Backspace
         if (currentInput.length > 0) {
           currentInput = currentInput.slice(0, -1);

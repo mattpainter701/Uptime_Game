@@ -94,6 +94,8 @@ export interface FortiCliSession {
   run(command: string): FortiCliResult;
   getPrompt(): string;
   snapshot(): FortiCliSnapshot;
+  /** Tab-completion: returns candidate completions for the partial input. */
+  autocomplete(input: string): string[];
 }
 
 const DEFAULT_VERSION = 'FortiGate-VM64 v7.4.3,build2463,231219 (GA)';
@@ -397,7 +399,8 @@ function formatPolicies(policies: FortiPolicyState[]): string[] {
     '--  -------------  --------------------  ------  ---------  ---  ----------  ----',
   ];
 
-  for (const policy of policies.slice().sort((left, right) => left.id - right.id)) {
+  // Respect insertion order — policies are shown in the order they appear in the Map
+  for (const policy of policies) {
     const path = `${policy.srcintf.join(',')} -> ${policy.dstintf.join(',')}`;
     lines.push(
       `${String(policy.id).padEnd(2)}  ${policy.name.padEnd(13)}  ${path.padEnd(20)}  ${policy.action.padEnd(6)}  ${policy.service.join(',').padEnd(9)}  ${policy.nat ? 'yes' : 'no '}  ${policy.logtraffic.padEnd(10)}  ${String(policy.hitCount)}`,
@@ -571,7 +574,7 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
       global: { ...global },
       mode,
       interfaces: Array.from(interfaces.values()).map(cloneInterface).sort((left, right) => left.name.localeCompare(right.name)),
-      policies: Array.from(policies.values()).map(clonePolicy).sort((left, right) => left.id - right.id),
+      policies: Array.from(policies.values()).map(clonePolicy),
       addresses: Array.from(addresses.values()).map(cloneAddress).sort((left, right) => left.name.localeCompare(right.name)),
       services: Array.from(services.values()).map(cloneService).sort((left, right) => left.name.localeCompare(right.name)),
       routes: Array.from(routes.values()).map(cloneRoute).sort((left, right) => left.id - right.id),
@@ -774,6 +777,45 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
           case 'router-static':
             return { lines: formatRoutes(Array.from(routes.values())), prompt: getPrompt(), mode, shouldDisconnect: false };
         }
+      }
+
+      // policy ordering: move <id> before|after <ref-id>
+      if (
+        mode.section === 'firewall-policy' &&
+        matchesCommandStart(tokens, ['move']) &&
+        rawTokens.length >= 4
+      ) {
+        const moveId = Number.parseInt(rawTokens[1], 10);
+        const relation = rawTokens[2].toLowerCase();
+        const refId = Number.parseInt(rawTokens[3], 10);
+
+        if (
+          !Number.isInteger(moveId) ||
+          !Number.isInteger(refId) ||
+          (relation !== 'before' && relation !== 'after')
+        ) {
+          return { lines: ['Command fail. Return code -61'], prompt: getPrompt(), mode, shouldDisconnect: false };
+        }
+
+        if (!policies.has(moveId) || !policies.has(refId)) {
+          return { lines: ['Command fail. Return code -61'], prompt: getPrompt(), mode, shouldDisconnect: false };
+        }
+
+        // Rebuild policy Map with new ordering
+        const ordered = Array.from(policies.entries());
+        const moveIdx = ordered.findIndex(([id]) => id === moveId);
+        const moveEntry = ordered[moveIdx]!;
+        ordered.splice(moveIdx, 1);
+        const refIdx = ordered.findIndex(([id]) => id === refId);
+        const insertIdx = relation === 'before' ? refIdx : refIdx + 1;
+        ordered.splice(insertIdx, 0, moveEntry);
+
+        policies.clear();
+        for (const [id, policy] of ordered) {
+          policies.set(id, policy);
+        }
+
+        return { lines: [], prompt: getPrompt(), mode, shouldDisconnect: false };
       }
 
       if (matchesCommandStart(tokens, ['edit']) && rawTokens.length >= 2) {
@@ -1012,6 +1054,127 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
     return { lines: ['Command fail. Return code -61'], prompt: getPrompt(), mode, shouldDisconnect: false };
   }
 
+  function autocomplete(input: string): string[] {
+    const trimmed = input.trimEnd();
+    const rawTokens = tokenize(trimmed);
+    const tokens = lowerTokens(rawTokens);
+    const trailingSpace = /\s$/.test(input);
+
+    // If trailing space, we're completing the NEXT token
+    const completionOffset = trailingSpace ? 0 : 1;
+    const prefixTokens = trailingSpace ? tokens : tokens.slice(0, -1);
+    const lastPartial = trailingSpace ? '' : tokens[tokens.length - 1] ?? '';
+
+    function matchPrefixes(candidates: string[]): string[] {
+      return candidates
+        .filter((c) => c.toLowerCase().startsWith(lastPartial.toLowerCase()))
+        .sort();
+    }
+
+    if (mode === 'exec') {
+      if (prefixTokens.length === 0) return matchPrefixes(['get', 'show', 'config', 'diagnose', 'exit']);
+      if (matchesAbbreviation(prefixTokens, ['get'])) return matchPrefixes(['system', 'router']);
+      if (matchesAbbreviation(prefixTokens, ['get', 'system'])) return matchPrefixes(['status', 'interface', 'performance']);
+      if (matchesAbbreviation(prefixTokens, ['get', 'router', 'info'])) return matchPrefixes(['routing-table']);
+      if (matchesAbbreviation(prefixTokens, ['get', 'router', 'info', 'routing-table'])) return matchPrefixes(['all']);
+      if (matchesAbbreviation(prefixTokens, ['show'])) return matchPrefixes(['system', 'firewall', 'router']);
+      if (matchesAbbreviation(prefixTokens, ['show', 'system'])) return matchPrefixes(['interface']);
+      if (matchesAbbreviation(prefixTokens, ['show', 'firewall'])) return matchPrefixes(['policy', 'address', 'service']);
+      if (matchesAbbreviation(prefixTokens, ['show', 'firewall', 'service'])) return matchPrefixes(['custom']);
+      if (matchesAbbreviation(prefixTokens, ['show', 'router'])) return matchPrefixes(['static']);
+      if (matchesAbbreviation(prefixTokens, ['config'])) return matchPrefixes(['system', 'firewall', 'router']);
+      if (matchesAbbreviation(prefixTokens, ['config', 'system'])) return matchPrefixes(['global', 'interface']);
+      if (matchesAbbreviation(prefixTokens, ['config', 'firewall'])) return matchPrefixes(['policy', 'address', 'service']);
+      if (matchesAbbreviation(prefixTokens, ['config', 'firewall', 'service'])) return matchPrefixes(['custom']);
+      if (matchesAbbreviation(prefixTokens, ['config', 'router'])) return matchPrefixes(['static']);
+      return [];
+    }
+
+    if (mode === 'config') {
+      if (prefixTokens.length === 0) return matchPrefixes(['config', 'end', 'exit']);
+      return [];
+    }
+
+    if (mode.kind === 'section') {
+      if (prefixTokens.length === 0) {
+        switch (mode.section) {
+          case 'system-global': return matchPrefixes(['set', 'show', 'end', 'exit']);
+          case 'system-interface': return matchPrefixes(['edit', 'show', 'end', 'exit']);
+          case 'firewall-policy': return matchPrefixes(['edit', 'show', 'move', 'end', 'exit']);
+          case 'firewall-address': return matchPrefixes(['edit', 'show', 'end', 'exit']);
+          case 'firewall-service-custom': return matchPrefixes(['edit', 'show', 'end', 'exit']);
+          case 'router-static': return matchPrefixes(['edit', 'show', 'end', 'exit']);
+        }
+      }
+      if (matchesAbbreviation(prefixTokens, ['edit']) && mode.section === 'system-interface') {
+        return matchPrefixes(Array.from(interfaces.keys()));
+      }
+      if (matchesAbbreviation(prefixTokens, ['edit']) && mode.section === 'firewall-policy') {
+        return matchPrefixes(Array.from(policies.keys()).map(String));
+      }
+      if (matchesAbbreviation(prefixTokens, ['edit']) && mode.section === 'firewall-address') {
+        return matchPrefixes(Array.from(addresses.keys()));
+      }
+      if (matchesAbbreviation(prefixTokens, ['edit']) && mode.section === 'firewall-service-custom') {
+        return matchPrefixes(Array.from(services.keys()));
+      }
+      if (matchesAbbreviation(prefixTokens, ['edit']) && mode.section === 'router-static') {
+        return matchPrefixes(Array.from(routes.keys()).map(String));
+      }
+      if (matchesAbbreviation(prefixTokens, ['move']) && mode.section === 'firewall-policy') {
+        return matchPrefixes(Array.from(policies.keys()).map(String));
+      }
+      return [];
+    }
+
+    if (mode.kind === 'edit') {
+      if (prefixTokens.length === 0) {
+        switch (mode.section) {
+          case 'system-global': return matchPrefixes(['set', 'show', 'end', 'exit']);
+          case 'system-interface': return matchPrefixes(['set', 'show', 'next', 'end', 'exit']);
+          case 'firewall-policy': return matchPrefixes(['set', 'show', 'next', 'end', 'exit']);
+          case 'firewall-address': return matchPrefixes(['set', 'show', 'next', 'end', 'exit']);
+          case 'firewall-service-custom': return matchPrefixes(['set', 'show', 'next', 'end', 'exit']);
+          case 'router-static': return matchPrefixes(['set', 'show', 'next', 'end', 'exit']);
+        }
+      }
+      if (matchesAbbreviation(prefixTokens, ['set'])) {
+        switch (mode.section) {
+          case 'system-global': return matchPrefixes(['hostname', 'admintimeout', 'timezone']);
+          case 'system-interface': return matchPrefixes(['ip', 'alias', 'allowaccess', 'status']);
+          case 'firewall-policy': return matchPrefixes(['name', 'srcintf', 'dstintf', 'action', 'service', 'nat', 'logtraffic']);
+          case 'firewall-address': return matchPrefixes(['subnet', 'interface']);
+          case 'firewall-service-custom': return matchPrefixes(['protocol', 'tcp-portrange', 'udp-portrange']);
+          case 'router-static': return matchPrefixes(['dst', 'gateway', 'device', 'distance', 'status']);
+        }
+      }
+      if (matchesAbbreviation(prefixTokens, ['set', 'action']) && mode.section === 'firewall-policy') {
+        return matchPrefixes(['accept', 'deny']);
+      }
+      if (matchesAbbreviation(prefixTokens, ['set', 'nat']) && mode.section === 'firewall-policy') {
+        return matchPrefixes(['enable', 'disable']);
+      }
+      if (matchesAbbreviation(prefixTokens, ['set', 'logtraffic']) && mode.section === 'firewall-policy') {
+        return matchPrefixes(['all', 'utm', 'disable']);
+      }
+      if (matchesAbbreviation(prefixTokens, ['set', 'status']) && mode.section === 'system-interface') {
+        return matchPrefixes(['up', 'down']);
+      }
+      if (matchesAbbreviation(prefixTokens, ['set', 'status']) && mode.section === 'router-static') {
+        return matchPrefixes(['enable', 'disable']);
+      }
+      if (matchesAbbreviation(prefixTokens, ['set', 'protocol']) && mode.section === 'firewall-service-custom') {
+        return matchPrefixes(['TCP', 'UDP', 'TCP/UDP']);
+      }
+      if (matchesAbbreviation(prefixTokens, ['set', 'allowaccess']) && mode.section === 'system-interface') {
+        return matchPrefixes(['ping', 'https', 'ssh', 'http', 'telnet', 'snmp']);
+      }
+      return [];
+    }
+
+    return [];
+  }
+
   return {
     run(command: string): FortiCliResult {
       const result = findSectionEdit(command);
@@ -1019,5 +1182,6 @@ export function createFortiCli(options: FortiCliOptions = {}): FortiCliSession {
     },
     getPrompt,
     snapshot,
+    autocomplete,
   };
 }
