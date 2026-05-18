@@ -1,11 +1,14 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useGameStore } from '../../store/gameStore';
-import type { SettingsPreset } from '../../types/game';
 import { GameCanvas } from '../scene/GameCanvas';
 import { HUD } from '../ui/HUD';
 import { TicketPanel } from '../ui/TicketPanel';
 import { TerminalView } from '../terminal/TerminalView';
 import { ElevatorPanel } from '../ui/ElevatorPanel';
+import { TicketResultScreen } from '../ui/TicketResultScreen';
+import { SessionSummaryScreen } from '../ui/SessionSummaryScreen';
+import { TutorialOverlay } from '../ui/TutorialOverlay';
+import { SandboxLabBrowser } from '../ui/SandboxLabBrowser';
 import { FLOORS } from '../scene/Building';
 
 function OfficeView() {
@@ -25,35 +28,20 @@ function OfficeView() {
 }
 
 function SettingsPanel() {
-  const { settings, updateSettings, setView, exportSettings, importSettings, resetSettings, applyPreset } = useGameStore();
-  const [activeTab, setActiveTab] = useState<'graphics' | 'audio' | 'gameplay' | 'terminal' | 'accessibility'>('graphics');
+  const { settings, updateSettings, setView, saveGame, loadGame, exportSave, importSave, lastSavedAt } = useGameStore();
 
-  const tabs = [
-    { id: 'graphics' as const, label: '🖥️ Graphics' },
-    { id: 'audio' as const, label: '🔊 Audio' },
-    { id: 'gameplay' as const, label: '🎮 Gameplay' },
-    { id: 'terminal' as const, label: '💻 Terminal' },
-    { id: 'accessibility' as const, label: '♿ Access' },
-  ];
-
-  const presets: { id: SettingsPreset; label: string; icon: string; desc: string }[] = [
-    { id: 'performance', label: 'Performance', icon: '⚡', desc: 'Low graphics, smooth FPS' },
-    { id: 'balanced', label: 'Balanced', icon: '⚖️', desc: 'Good visuals & performance' },
-    { id: 'quality', label: 'Quality', icon: '✨', desc: 'Best visuals' },
-  ];
-
-  const handleExportSettings = () => {
-    const json = exportSettings();
+  const handleExport = () => {
+    const json = exportSave();
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `netops-tower-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `netops-tower-save-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const handleImportSettings = () => {
+  const handleImport = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
@@ -64,11 +52,11 @@ function SettingsPanel() {
       reader.onload = (re) => {
         const text = re.target?.result as string;
         if (!text) return;
-        const success = importSettings(text);
+        const success = importSave(text);
         if (success) {
-          alert('Settings imported successfully!');
+          alert('Save imported successfully! Game state restored.');
         } else {
-          alert('Failed to import settings: invalid file format.');
+          alert('Failed to import save: invalid file format.');
         }
       };
       reader.readAsText(file);
@@ -76,314 +64,10 @@ function SettingsPanel() {
     input.click();
   };
 
-  const renderGraphicsTab = () => (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-bold text-gray-400 mb-2">Quality Preset</label>
-        <div className="flex gap-2">
-          {(['low', 'medium', 'high'] as const).map((q) => (
-            <button
-              key={q}
-              onClick={() => updateSettings({ graphicsQuality: q })}
-              className={`flex-1 px-3 py-2 rounded capitalize text-sm font-medium transition-all ${
-                settings.graphicsQuality === q
-                  ? 'bg-cyan-500/30 border border-cyan-500 text-cyan-400'
-                  : 'bg-white/5 border border-gray-600 text-gray-400 hover:bg-white/10'
-              }`}
-            >
-              {q}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="flex items-center justify-between mb-3">
-          <span className="text-white text-sm">Render Distance</span>
-          <span className="text-cyan-400 text-sm">{settings.renderDistance}</span>
-        </label>
-        <input
-          type="range"
-          min="1"
-          max="10"
-          step="1"
-          value={settings.renderDistance}
-          onChange={(e) => updateSettings({ renderDistance: parseInt(e.target.value) })}
-          className="w-full accent-cyan-500"
-        />
-        <div className="flex justify-between text-xs text-gray-600 mt-1">
-          <span>Near</span><span>Far</span>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <label className="flex items-center justify-between cursor-pointer">
-          <span className="text-white text-sm">Shadows</span>
-          <button
-            onClick={() => updateSettings({ shadows: !settings.shadows })}
-            className={`w-11 h-6 rounded-full transition-colors relative ${
-              settings.shadows ? 'bg-cyan-500' : 'bg-gray-600'
-            }`}
-          >
-            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
-              settings.shadows ? 'translate-x-5' : 'translate-x-0.5'
-            }`} />
-          </button>
-        </label>
-
-        <label className="flex items-center justify-between cursor-pointer">
-          <span className="text-white text-sm">Anti-aliasing</span>
-          <button
-            onClick={() => updateSettings({ antialiasing: !settings.antialiasing })}
-            className={`w-11 h-6 rounded-full transition-colors relative ${
-              settings.antialiasing ? 'bg-cyan-500' : 'bg-gray-600'
-            }`}
-          >
-            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
-              settings.antialiasing ? 'translate-x-5' : 'translate-x-0.5'
-            }`} />
-          </button>
-        </label>
-      </div>
-    </div>
-  );
-
-  const renderAudioTab = () => (
-    <div className="space-y-4">
-      {[
-        { key: 'masterVolume' as const, label: 'Master Volume' },
-        { key: 'musicVolume' as const, label: 'Music Volume' },
-        { key: 'sfxVolume' as const, label: 'SFX Volume' },
-      ].map(({ key, label }) => (
-        <div key={key}>
-          <label className="flex items-center justify-between mb-2">
-            <span className="text-white text-sm">{label}</span>
-            <span className="text-cyan-400 text-sm">{Math.round(settings[key] * 100)}%</span>
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={settings[key]}
-            onChange={(e) => updateSettings({ [key]: parseFloat(e.target.value) })}
-            className="w-full accent-cyan-500"
-          />
-        </div>
-      ))}
-
-      <div className="space-y-3 pt-2">
-        {[
-          { key: 'ambientSounds' as const, label: 'Ambient Sounds', desc: 'Background office/environment audio' },
-          { key: 'uiSounds' as const, label: 'UI Sounds', desc: 'Button clicks, notifications, alerts' },
-        ].map(({ key, label, desc }) => (
-          <label key={key} className="flex items-center justify-between cursor-pointer">
-            <div>
-              <span className="text-white text-sm block">{label}</span>
-              <span className="text-gray-500 text-xs">{desc}</span>
-            </div>
-            <button
-              onClick={() => updateSettings({ [key]: !settings[key] })}
-              className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${
-                settings[key] ? 'bg-cyan-500' : 'bg-gray-600'
-              }`}
-            >
-              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
-                settings[key] ? 'translate-x-5' : 'translate-x-0.5'
-              }`} />
-            </button>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderGameplayTab = () => (
-    <div className="space-y-4">
-      {[
-        { key: 'showHints' as const, label: 'Show Hints', desc: 'Display hint availability during tickets' },
-        { key: 'autoValidate' as const, label: 'Auto-Validate', desc: 'Automatically run validation when criteria met' },
-        { key: 'confirmOnFail' as const, label: 'Confirm on Fail', desc: 'Ask for confirmation before failing a ticket' },
-        { key: 'enforceTimeLimits' as const, label: 'Enforce Time Limits', desc: 'Auto-fail tickets when time runs out' },
-      ].map(({ key, label, desc }) => (
-        <label key={key} className="flex items-center justify-between cursor-pointer">
-          <div>
-            <span className="text-white text-sm block">{label}</span>
-            <span className="text-gray-500 text-xs">{desc}</span>
-          </div>
-          <button
-            onClick={() => updateSettings({ [key]: !settings[key] })}
-            className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${
-              settings[key] ? 'bg-cyan-500' : 'bg-gray-600'
-            }`}
-          >
-            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
-              settings[key] ? 'translate-x-5' : 'translate-x-0.5'
-            }`} />
-          </button>
-        </label>
-      ))}
-    </div>
-  );
-
-  const renderTerminalTab = () => (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-white text-sm mb-2">Theme</label>
-        <div className="flex gap-2">
-          {(['cyberpunk', 'dark', 'light'] as const).map((theme) => (
-            <button
-              key={theme}
-              onClick={() => updateSettings({ terminalTheme: theme })}
-              className={`flex-1 px-3 py-2 rounded capitalize text-sm ${
-                settings.terminalTheme === theme
-                  ? 'bg-cyan-500/30 border border-cyan-500 text-cyan-400'
-                  : 'bg-white/5 border border-gray-600 text-gray-300 hover:bg-white/10'
-              }`}
-            >
-              {theme}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="flex items-center justify-between mb-2">
-          <span className="text-white text-sm">Font Size</span>
-          <span className="text-cyan-400 text-sm">{settings.terminalFontSize}px</span>
-        </label>
-        <input
-          type="range"
-          min="10"
-          max="24"
-          step="1"
-          value={settings.terminalFontSize}
-          onChange={(e) => updateSettings({ terminalFontSize: parseInt(e.target.value) })}
-          className="w-full accent-cyan-500"
-        />
-      </div>
-
-      <div>
-        <label className="flex items-center justify-between mb-2">
-          <span className="text-white text-sm">Opacity</span>
-          <span className="text-cyan-400 text-sm">{Math.round(settings.terminalOpacity * 100)}%</span>
-        </label>
-        <input
-          type="range"
-          min="0.5"
-          max="1"
-          step="0.05"
-          value={settings.terminalOpacity}
-          onChange={(e) => updateSettings({ terminalOpacity: parseFloat(e.target.value) })}
-          className="w-full accent-cyan-500"
-        />
-      </div>
-
-      <div>
-        <label className="flex items-center justify-between mb-2">
-          <span className="text-white text-sm">Scrollback Lines</span>
-          <span className="text-cyan-400 text-sm">{settings.terminalScrollback}</span>
-        </label>
-        <input
-          type="range"
-          min="500"
-          max="5000"
-          step="500"
-          value={settings.terminalScrollback}
-          onChange={(e) => updateSettings({ terminalScrollback: parseInt(e.target.value) })}
-          className="w-full accent-cyan-500"
-        />
-        <div className="flex justify-between text-xs text-gray-600 mt-1">
-          <span>500</span><span>5000</span>
-        </div>
-      </div>
-
-      <div className="space-y-3 pt-2">
-        <label className="flex items-center justify-between cursor-pointer">
-          <span className="text-white text-sm">Blinking Cursor</span>
-          <button
-            onClick={() => updateSettings({ terminalBlinkCursor: !settings.terminalBlinkCursor })}
-            className={`w-11 h-6 rounded-full transition-colors relative ${
-              settings.terminalBlinkCursor ? 'bg-cyan-500' : 'bg-gray-600'
-            }`}
-          >
-            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
-              settings.terminalBlinkCursor ? 'translate-x-5' : 'translate-x-0.5'
-            }`} />
-          </button>
-        </label>
-      </div>
-    </div>
-  );
-
-  const renderAccessibilityTab = () => (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-white text-sm mb-2">Colorblind Mode</label>
-        <div className="flex flex-wrap gap-2">
-          {([
-            { value: 'none' as const, label: 'None' },
-            { value: 'protanopia' as const, label: 'Protanopia (Red)' },
-            { value: 'deuteranopia' as const, label: 'Deuteranopia (Green)' },
-            { value: 'tritanopia' as const, label: 'Tritanopia (Blue)' },
-          ]).map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => updateSettings({ colorblindMode: value })}
-              className={`px-3 py-2 rounded text-xs font-medium transition-all ${
-                settings.colorblindMode === value
-                  ? 'bg-cyan-500/30 border border-cyan-500 text-cyan-400'
-                  : 'bg-white/5 border border-gray-600 text-gray-400 hover:bg-white/10'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-gray-600 mt-2 italic">
-          Stub — full colorblind pipeline coming in a future update.
-        </p>
-      </div>
-
-      <div className="space-y-3 pt-2">
-        {[
-          { key: 'reducedMotion' as const, label: 'Reduced Motion', desc: 'Skip animations and transitions' },
-          { key: 'largeText' as const, label: 'Large Text', desc: 'Increase UI text size globally' },
-        ].map(({ key, label, desc }) => (
-          <label key={key} className="flex items-center justify-between cursor-pointer">
-            <div>
-              <span className="text-white text-sm block">{label}</span>
-              <span className="text-gray-500 text-xs">{desc}</span>
-            </div>
-            <button
-              onClick={() => updateSettings({ [key]: !settings[key] })}
-              className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${
-                settings[key] ? 'bg-cyan-500' : 'bg-gray-600'
-              }`}
-            >
-              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
-                settings[key] ? 'translate-x-5' : 'translate-x-0.5'
-              }`} />
-            </button>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-
-  const tabContent: Record<string, () => JSX.Element> = {
-    graphics: renderGraphicsTab,
-    audio: renderAudioTab,
-    gameplay: renderGameplayTab,
-    terminal: renderTerminalTab,
-    accessibility: renderAccessibilityTab,
-  };
-
   return (
     <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-lg m-4 glass-panel max-h-[85vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
+      <div className="w-full max-w-lg m-4 glass-panel">
+        <div className="flex items-center justify-between p-4 border-b border-gray-700">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <span>⚙️</span>
             <span>Settings</span>
@@ -396,72 +80,168 @@ function SettingsPanel() {
           </button>
         </div>
 
-        {/* Preset buttons */}
-        <div className="px-4 pt-4 flex-shrink-0">
-          <p className="text-xs font-bold text-gray-500 mb-2">PRESETS</p>
-          <div className="flex gap-2">
-            {presets.map((preset) => (
-              <button
-                key={preset.id}
-                onClick={() => applyPreset(preset.id)}
-                className="flex-1 px-2 py-2 rounded bg-white/5 border border-gray-600 hover:border-cyan-500/50 hover:bg-white/10 transition-all text-center"
-                title={preset.desc}
-              >
-                <span className="text-lg block">{preset.icon}</span>
-                <span className="text-xs text-gray-300">{preset.label}</span>
-              </button>
-            ))}
+        <div className="p-6 space-y-6">
+          {/* Audio settings */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-400 mb-3">AUDIO</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="flex items-center justify-between mb-2">
+                  <span className="text-white">Music Volume</span>
+                  <span className="text-cyan-400">{Math.round(settings.musicVolume * 100)}%</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={settings.musicVolume}
+                  onChange={(e) => updateSettings({ musicVolume: parseFloat(e.target.value) })}
+                  className="w-full accent-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="flex items-center justify-between mb-2">
+                  <span className="text-white">SFX Volume</span>
+                  <span className="text-cyan-400">{Math.round(settings.sfxVolume * 100)}%</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={settings.sfxVolume}
+                  onChange={(e) => updateSettings({ sfxVolume: parseFloat(e.target.value) })}
+                  className="w-full accent-cyan-500"
+                />
+              </div>
+            </div>
           </div>
-        </div>
 
-        {/* Tab navigation */}
-        <div className="flex px-4 pt-4 gap-1 flex-shrink-0 overflow-x-auto">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-2.5 py-1.5 rounded-t text-xs font-medium whitespace-nowrap transition-all ${
-                activeTab === tab.id
-                  ? 'bg-cyan-500/20 border border-b-0 border-cyan-500/50 text-cyan-400'
-                  : 'bg-white/5 border border-transparent text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab content */}
-        <div className="p-4 border-t border-gray-700 flex-1 overflow-y-auto">
-          {tabContent[activeTab]()}
-        </div>
-
-        {/* Footer actions */}
-        <div className="p-4 border-t border-gray-700 flex-shrink-0 space-y-2">
-          <div className="flex gap-2">
-            <button
-              onClick={handleExportSettings}
-              className="flex-1 px-3 py-2 bg-purple-500/20 border border-purple-500/50 rounded text-purple-400 text-sm hover:bg-purple-500/30 transition-all flex items-center justify-center gap-1"
-            >
-              <span>📤</span> Export
-            </button>
-            <button
-              onClick={handleImportSettings}
-              className="flex-1 px-3 py-2 bg-orange-500/20 border border-orange-500/50 rounded text-orange-400 text-sm hover:bg-orange-500/30 transition-all flex items-center justify-center gap-1"
-            >
-              <span>📥</span> Import
-            </button>
+          {/* Terminal settings */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-400 mb-3">TERMINAL</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-white mb-2">Theme</label>
+                <div className="flex gap-2">
+                  {(['cyberpunk', 'dark', 'light'] as const).map((theme) => (
+                    <button
+                      key={theme}
+                      onClick={() => updateSettings({ terminalTheme: theme })}
+                      className={`px-4 py-2 rounded capitalize ${
+                        settings.terminalTheme === theme
+                          ? 'bg-cyan-500/30 border border-cyan-500 text-cyan-400'
+                          : 'bg-white/5 border border-gray-600 text-gray-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {theme}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="flex items-center justify-between mb-2">
+                  <span className="text-white">Font Size</span>
+                  <span className="text-cyan-400">{settings.terminalFontSize}px</span>
+                </label>
+                <input
+                  type="range"
+                  min="10"
+                  max="20"
+                  step="1"
+                  value={settings.terminalFontSize}
+                  onChange={(e) => updateSettings({ terminalFontSize: parseInt(e.target.value) })}
+                  className="w-full accent-cyan-500"
+                />
+              </div>
+            </div>
           </div>
-          <button
-            onClick={() => {
-              if (confirm('Reset all settings to defaults? Your game progress will not be affected.')) {
-                resetSettings();
-              }
-            }}
-            className="w-full px-3 py-2 bg-red-500/20 border border-red-500/50 rounded text-red-400 text-sm hover:bg-red-500/30 transition-all flex items-center justify-center gap-1"
-          >
-            <span>🔄</span> Reset to Defaults
-          </button>
+
+          {/* Game data */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-400 mb-3">SAVE DATA</h3>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={saveGame}
+                  className="px-4 py-2 bg-cyan-500/20 border border-cyan-500/50 rounded text-cyan-400 hover:bg-cyan-500/30 transition-all flex items-center gap-2"
+                >
+                  <span>💾</span>
+                  Save Game
+                </button>
+                <button
+                  onClick={() => {
+                    const ok = loadGame();
+                    if (ok) {
+                      alert('Game loaded successfully!');
+                    } else {
+                      alert('No save data found.');
+                    }
+                  }}
+                  className="px-4 py-2 bg-green-500/20 border border-green-500/50 rounded text-green-400 hover:bg-green-500/30 transition-all flex items-center gap-2"
+                >
+                  <span>📂</span>
+                  Load Game
+                </button>
+              </div>
+
+              {lastSavedAt && (
+                <p className="text-xs text-gray-500">
+                  Last saved: {new Date(lastSavedAt).toLocaleString()}
+                </p>
+              )}
+
+              <div className="border-t border-gray-700 pt-3 mt-3">
+                <h4 className="text-xs font-bold text-gray-500 mb-2">BACKUP</h4>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleExport}
+                    className="px-4 py-2 bg-purple-500/20 border border-purple-500/50 rounded text-purple-400 hover:bg-purple-500/30 transition-all flex items-center gap-2"
+                  >
+                    <span>📤</span>
+                    Export Save
+                  </button>
+                  <button
+                    onClick={handleImport}
+                    className="px-4 py-2 bg-orange-500/20 border border-orange-500/50 rounded text-orange-400 hover:bg-orange-500/30 transition-all flex items-center gap-2"
+                  >
+                    <span>📥</span>
+                    Import Save
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-700 pt-3 mt-3">
+                <h4 className="text-xs font-bold text-gray-500 mb-2">TUTORIAL</h4>
+                <button
+                  onClick={() => {
+                    useGameStore.getState().replayTutorial();
+                    setView('office');
+                  }}
+                  className="px-4 py-2 bg-cyan-500/20 border border-cyan-500/50 rounded text-cyan-400 hover:bg-cyan-500/30 transition-all flex items-center gap-2"
+                >
+                  <span>📖</span>
+                  Replay Tutorial
+                </button>
+              </div>
+
+              <div className="border-t border-gray-700 pt-3 mt-3">
+                <h4 className="text-xs font-bold text-red-500/70 mb-2">DANGER ZONE</h4>
+                <button
+                  onClick={() => {
+                    if (confirm('Are you sure? This will reset all progress.')) {
+                      localStorage.removeItem('netops-tower-save');
+                      window.location.reload();
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-500/20 border border-red-500/50 rounded text-red-400 hover:bg-red-500/30"
+                >
+                  Reset Progress
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -588,10 +368,11 @@ export function Game() {
   // Escape key handler — toggles pause when in-game (terminal/office views with active ticket)
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
-      // Don't toggle pause in menus (settings, shop, tickets)
-      const menuViews: string[] = ['settings', 'shop', 'tickets'];
+      // Don't toggle pause in menus (settings, shop, tickets, result screens)
+      const menuViews: string[] = ['settings', 'shop', 'tickets', 'ticketResult', 'sessionSummary', 'sandboxLabBrowser'];
       const isInMenu = menuViews.includes(useGameStore.getState().currentView);
-      if (isInMenu) return;
+      // Also don't toggle pause in sandbox mode (no time pressure)
+      if (isInMenu || useGameStore.getState().sandboxState.active) return;
 
       // Toggle pause
       const { sessionState, pauseGame, resumeGame } = useGameStore.getState();
@@ -609,9 +390,9 @@ export function Game() {
       if (document.hidden) {
         // Tab lost focus — auto-pause if in-game
         const state = useGameStore.getState();
-        const menuViews: string[] = ['settings', 'shop', 'tickets'];
+        const menuViews: string[] = ['settings', 'shop', 'tickets', 'ticketResult', 'sessionSummary', 'sandboxLabBrowser'];
         const isInMenu = menuViews.includes(state.currentView);
-        if (!isInMenu && state.activeTicket && !state.sessionState.isPaused) {
+        if (!isInMenu && state.activeTicket && !state.sessionState.isPaused && !state.sandboxState.active) {
           state.pauseGame();
         }
       }
@@ -637,6 +418,9 @@ export function Game() {
       {currentView === 'tickets' && <TicketPanel />}
       {currentView === 'shop' && <ShopPanel />}
       {currentView === 'settings' && <SettingsPanel />}
+      {currentView === 'ticketResult' && <TicketResultScreen />}
+      {currentView === 'sessionSummary' && <SessionSummaryScreen />}
+      {currentView === 'sandboxLabBrowser' && <SandboxLabBrowser />}
 
       {/* Elevator panel overlay */}
       <ElevatorPanel
@@ -649,6 +433,9 @@ export function Game() {
 
       {/* Pause overlay — renders on top of everything when paused */}
       {isPaused && <PauseOverlay />}
+
+      {/* Tutorial overlay — on top of everything when tutorial is active */}
+      <TutorialOverlay />
     </div>
   );
 }

@@ -2,7 +2,6 @@ import { useGameStore } from '../../store/gameStore';
 import { UptimeClockMini } from './UptimeClock';
 import { TicketTimerMini } from './TicketTimer';
 import { InventoryMini } from './InventoryPanel';
-import { DifficultyIndicator } from './DifficultyCurvePanel';
 
 function SaveIndicator() {
   const lastSavedAt = useGameStore((s) => s.lastSavedAt);
@@ -54,7 +53,7 @@ const FLOOR_DISPLAY_NAMES: Record<string, string> = {
 };
 
 export function HUD() {
-  const { player, activeTicket, currentView, setView, uptime, failTicket, playerPosition, currentFloor } = useGameStore();
+  const { player, activeTicket, currentView, setView, uptime, failTicket, playerPosition, currentFloor, sandboxState, enterSandbox } = useGameStore();
 
   return (
     <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none">
@@ -157,11 +156,6 @@ export function HUD() {
 
           <div className="w-px h-8 bg-gray-600" />
 
-          {/* Difficulty Indicator */}
-          <DifficultyIndicator />
-
-          <div className="w-px h-8 bg-gray-600" />
-
           {/* Save */}
           <SaveIndicator />
         </div>
@@ -173,11 +167,20 @@ export function HUD() {
             { id: 'tickets', icon: '📋', label: 'Tickets' },
             { id: 'terminal', icon: '💻', label: 'Terminal' },
             { id: 'shop', icon: '🛒', label: 'Shop' },
+            { id: 'sessionSummary', icon: '📊', label: 'Session Summary' },
             { id: 'settings', icon: '⚙️', label: 'Settings' },
+            { id: 'sandboxLabBrowser', icon: '🧪', label: 'Sandbox' },
           ].map((nav) => (
             <button
               key={nav.id}
-              onClick={() => setView(nav.id as any)}
+              onClick={() => {
+                if (nav.id === 'sandboxLabBrowser') {
+                  enterSandbox();
+                } else {
+                  setView(nav.id as any);
+                }
+              }}
+              data-tutorial={nav.id === 'tickets' ? 'tickets-button' : undefined}
               className={`px-3 py-2 rounded transition-all ${
                 currentView === nav.id
                   ? 'bg-cyan-500/30 text-cyan-400 glow-cyan'

@@ -37,34 +37,12 @@ export type TicketCategory =
   | 'security'
   | 'systems'
   | 'automation'
-  | 'high-availability'
-  | 'wireless'
-  | 'voice'
-  | 'datacenter';
+  | 'high-availability';
 
 export interface TicketHint {
   cost: number;
   text: string;
   revealed: boolean;
-}
-
-// Ticket Engine v2: Hint economy & SLA time-pressure
-export type SlaTier = 'platinum' | 'gold' | 'silver' | 'bronze';
-
-export interface TicketSla {
-  tier: SlaTier;
-  timeLimitMinutes: number;
-  speedBonusThresholdPercent: number;  // % of timeLimit under which speed bonus kicks in
-  speedBonusMultiplier: number;        // e.g. 1.5 = 50% extra credits
-  overtimePenaltyPerMinute: number;    // credit loss per minute over timeLimit
-  reputationBonus: number;             // flat rep bonus for on-time completion
-}
-
-export interface TicketHintEconomy {
-  maxHints: number;           // max hints purchasable (default 3)
-  baseCost: number;           // cost of first hint
-  costMultiplier: number;     // each subsequent hint multiplies cost (e.g. 1.5)
-  freeHintsPerDay: number;    // daily free hints (from shop items)
 }
 
 export interface ValidationCriteria {
@@ -160,148 +138,16 @@ export interface Lab {
   topology: string; // SVG or image URL
 }
 
-export type GameView = 'office' | 'terminal' | 'tickets' | 'shop' | 'settings';
+export type GameView = 'office' | 'terminal' | 'tickets' | 'shop' | 'settings' | 'ticketResult' | 'sessionSummary' | 'sandboxLabBrowser';
 
 export type TimeOfDay = number; // 0-24
 
-export type GraphicsQuality = 'low' | 'medium' | 'high';
-export type ColorblindMode = 'none' | 'protanopia' | 'deuteranopia' | 'tritanopia';
-export type SettingsPreset = 'performance' | 'balanced' | 'quality';
-
 export interface GameSettings {
-  // Graphics
-  graphicsQuality: GraphicsQuality;
-  shadows: boolean;
-  antialiasing: boolean;
-  renderDistance: number; // 1-10
-
-  // Audio
-  masterVolume: number; // 0-1
   musicVolume: number;
   sfxVolume: number;
-  ambientSounds: boolean;
-  uiSounds: boolean;
-
-  // Gameplay
-  showHints: boolean;
-  autoValidate: boolean;
-  confirmOnFail: boolean;
-  enforceTimeLimits: boolean;
-
-  // Terminal
-  terminalTheme: 'dark' | 'light' | 'cyberpunk' | 'amber-retro' | 'solarized-dark';
+  terminalTheme: 'dark' | 'light' | 'cyberpunk';
   terminalFontSize: number;
-  terminalFontFamily: 'jetbrains' | 'fira' | 'source' | 'ibm' | 'ubuntu';
-  terminalOpacity: number; // 0-1
-  terminalBlinkCursor: boolean;
-  terminalScrollback: number; // 500-5000
-
-  // Accessibility (stubs — full implementation in T9)
-  colorblindMode: ColorblindMode;
-  reducedMotion: boolean;
-  largeText: boolean;
 }
-
-/** Preset definitions for one-click settings application */
-export const SETTINGS_PRESETS: Record<SettingsPreset, GameSettings> = {
-  performance: {
-    graphicsQuality: 'low',
-    shadows: false,
-    antialiasing: false,
-    renderDistance: 3,
-    masterVolume: 0.5,
-    musicVolume: 0.3,
-    sfxVolume: 0.5,
-    ambientSounds: false,
-    uiSounds: true,
-    showHints: true,
-    autoValidate: false,
-    confirmOnFail: false,
-    enforceTimeLimits: false,
-    terminalTheme: 'dark',
-    terminalFontSize: 14,
-    terminalFontFamily: 'jetbrains',
-    terminalOpacity: 0.85,
-    terminalBlinkCursor: false,
-    terminalScrollback: 1000,
-    colorblindMode: 'none',
-    reducedMotion: true,
-    largeText: false,
-  },
-  balanced: {
-    graphicsQuality: 'medium',
-    shadows: true,
-    antialiasing: true,
-    renderDistance: 5,
-    masterVolume: 0.7,
-    musicVolume: 0.5,
-    sfxVolume: 0.7,
-    ambientSounds: true,
-    uiSounds: true,
-    showHints: true,
-    autoValidate: false,
-    confirmOnFail: true,
-    enforceTimeLimits: true,
-    terminalTheme: 'cyberpunk',
-    terminalFontSize: 14,
-    terminalFontFamily: 'jetbrains',
-    terminalOpacity: 0.9,
-    terminalBlinkCursor: true,
-    terminalScrollback: 2000,
-    colorblindMode: 'none',
-    reducedMotion: false,
-    largeText: false,
-  },
-  quality: {
-    graphicsQuality: 'high',
-    shadows: true,
-    antialiasing: true,
-    renderDistance: 8,
-    masterVolume: 0.8,
-    musicVolume: 0.7,
-    sfxVolume: 0.8,
-    ambientSounds: true,
-    uiSounds: true,
-    showHints: true,
-    autoValidate: true,
-    confirmOnFail: true,
-    enforceTimeLimits: true,
-    terminalTheme: 'cyberpunk',
-    terminalFontSize: 16,
-    terminalFontFamily: 'jetbrains',
-    terminalOpacity: 0.95,
-    terminalBlinkCursor: true,
-    terminalScrollback: 3000,
-    colorblindMode: 'none',
-    reducedMotion: false,
-    largeText: false,
-  },
-};
-
-export const DEFAULT_SETTINGS: GameSettings = {
-  graphicsQuality: 'medium',
-  shadows: true,
-  antialiasing: true,
-  renderDistance: 5,
-  masterVolume: 0.7,
-  musicVolume: 0.5,
-  sfxVolume: 0.7,
-  ambientSounds: true,
-  uiSounds: true,
-  showHints: true,
-  autoValidate: false,
-  confirmOnFail: true,
-  enforceTimeLimits: true,
-  terminalTheme: 'cyberpunk',
-  terminalFontSize: 14,
-  terminalFontFamily: 'jetbrains',
-  terminalOpacity: 0.9,
-  terminalBlinkCursor: true,
-  terminalScrollback: 2000,
-  colorblindMode: 'none',
-  reducedMotion: false,
-  largeText: false,
-};
 
 // Uptime tracking types
 export interface NodeUptimeStats {
@@ -439,73 +285,112 @@ export interface SessionState {
   pausedAt: number | null; // timestamp when pause started
 }
 
-// Session record — captures per-ticket outcome for analytics
-export interface SessionRecord {
-  id: string;               // unique record id (ticket_id + timestamp)
-  ticketId: string;
-  ticketTitle: string;
-  category: TicketCategory;
-  difficulty: 1 | 2 | 3 | 4 | 5;
-  outcome: 'completed' | 'failed';
-  timestamp: number;        // when the ticket resolved
-  timeSpentMs: number;      // elapsed time from start to resolution
-  score: number;            // 0.0 to 1.0 (from validation)
-  creditsEarned: number;
-  xpEarned: number;
-  uptimeBonus: number;      // multiplier applied
-  hintsUsed: number;
-  hintCostTotal: number;
-}
-
-// Analytics types for difficulty curve monitoring
-export interface TierStats {
-  difficulty: 1 | 2 | 3 | 4 | 5;
-  attempts: number;
-  wins: number;
-  losses: number;
-  winRate: number;          // 0.0 to 1.0
-  avgTimeMs: number;
-  avgScore: number;
-}
-
-export interface CategoryStats {
-  category: TicketCategory;
-  attempts: number;
-  wins: number;
-  losses: number;
-  winRate: number;
-}
-
-export interface AnalyticsSnapshot {
-  tiers: TierStats[];
-  categories: CategoryStats[];
-  overall: {
-    totalAttempts: number;
-    totalWins: number;
-    totalLosses: number;
-    winRate: number;
-    avgTimeMs: number;
-    avgScore: number;
-    avgUptimeBonus: number;
-  };
-  trend: ('completed' | 'failed')[];  // last 10 ticket outcomes
-  recommendations: string[];
-}
-
-// Server-side analytics models
-export interface AnalyticsReport {
-  playerId: string;
-  records: SessionRecord[];
-  snapshot: AnalyticsSnapshot;
-}
-
-export interface AggregateAnalytics {
-  totalPlayers: number;
-  totalTickets: number;
-  tiers: TierStats[];
-  categories: CategoryStats[];
-  overallWinRate: number;
-}
-
 // Career progression
 export { CAREER_LEVELS } from '../lib/careerProgression';
+
+// Session summary types
+export type TicketOutcome = 'completed' | 'failed';
+
+export interface SessionRecord {
+  ticketId: string;
+  title: string;
+  category: string;
+  difficulty: number;
+  outcome: TicketOutcome;
+  timeTaken: number; // seconds
+  creditsEarned: number;
+  xpEarned: number;
+  uptimeBonus: number; // multiplier
+  validationScore: number; // 0-1
+  hintsUsed: number;
+  timestamp: number;
+}
+
+// Tutorial system types
+export type TutorialStep =
+  | 'welcome'
+  | 'ticket1'
+  | 'ticket2'
+  | 'ticket3'
+  | 'ticket4'
+  | 'ticket5'
+  | 'graduation';
+
+export const TUTORIAL_STEP_ORDER: TutorialStep[] = [
+  'welcome',
+  'ticket1',
+  'ticket2',
+  'ticket3',
+  'ticket4',
+  'ticket5',
+  'graduation',
+];
+
+export interface TutorialState {
+  active: boolean;
+  step: TutorialStep;
+  skipped: boolean;
+  graduationShown: boolean;
+}
+
+export interface TutorialUiHighlight {
+  selector: string;  // CSS selector of the element to highlight
+  message: string;   // What to say about this element
+  pulseColor?: 'cyan' | 'pink' | 'green';
+}
+
+export interface TutorialStepConfig {
+  step: TutorialStep;
+  title: string;
+  body: string;
+  highlights?: TutorialUiHighlight[];
+  hint?: string;         // "Need help?" hint text
+  targetTicketId?: string; // If set, the tutorial ticket for this step
+}
+
+// Sandbox mode types
+
+export interface SandboxState {
+  /** Whether sandbox mode is currently active */
+  active: boolean;
+  /** The lab/ticket currently loaded in sandbox, if any */
+  activeLabId: string | null;
+  /** Show solution for current lab */
+  showSolution: boolean;
+  /** Current config diff for comparison */
+  showDiff: boolean;
+}
+
+/** A sandbox lab — derived from a ticket, browsable in sandbox mode */
+export interface SandboxLab {
+  id: string;
+  title: string;
+  description: string;
+  category: TicketCategory;
+  difficulty: 1 | 2 | 3 | 4 | 5;
+  labTemplate: string;
+  hints: TicketHint[];
+  validation: ValidationCriteria[];
+  /** Derived appliance type from lab template */
+  applianceType: string;
+  /** Solution steps for "Show Solution" */
+  solution: SandboxSolution;
+}
+
+export interface SandboxSolution {
+  summary: string;
+  steps: SandboxSolutionStep[];
+}
+
+export interface SandboxSolutionStep {
+  /** Human-readable description of this step */
+  description: string;
+  /** Command to run (for command reference) */
+  command?: string;
+  /** Expected config snippet */
+  expectedConfig?: string;
+  /** Which node to run the command on */
+  node?: string;
+}
+
+export type ApplianceType = 'router' | 'switch' | 'firewall' | 'linux' | 'general';

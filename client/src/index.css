@@ -88,6 +88,58 @@ html, body, #root {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
+/* Tutorial UI highlight animations */
+@keyframes highlight-pulse-cyan {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(0, 255, 255, 0.3), 0 0 8px rgba(0, 255, 255, 0.15);
+    border-color: rgba(0, 255, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(0, 255, 255, 0.7), 0 0 24px rgba(0, 255, 255, 0.4);
+    border-color: rgba(0, 255, 255, 0.8);
+  }
+}
+
+@keyframes highlight-pulse-pink {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(255, 0, 128, 0.3), 0 0 8px rgba(255, 0, 128, 0.15);
+    border-color: rgba(255, 0, 128, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(255, 0, 128, 0.7), 0 0 24px rgba(255, 0, 128, 0.4);
+    border-color: rgba(255, 0, 128, 0.8);
+  }
+}
+
+@keyframes highlight-pulse-green {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(0, 255, 65, 0.3), 0 0 8px rgba(0, 255, 65, 0.15);
+    border-color: rgba(0, 255, 65, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(0, 255, 65, 0.7), 0 0 24px rgba(0, 255, 65, 0.4);
+    border-color: rgba(0, 255, 65, 0.8);
+  }
+}
+
+.tutorial-highlight-cyan {
+  animation: highlight-pulse-cyan 1.5s ease-in-out infinite;
+  position: relative;
+  z-index: 41 !important;
+}
+
+.tutorial-highlight-pink {
+  animation: highlight-pulse-pink 1.5s ease-in-out infinite;
+  position: relative;
+  z-index: 41 !important;
+}
+
+.tutorial-highlight-green {
+  animation: highlight-pulse-green 1.5s ease-in-out infinite;
+  position: relative;
+  z-index: 41 !important;
+}
+
 /* xterm.js overrides */
 .xterm {
   height: 100%;
