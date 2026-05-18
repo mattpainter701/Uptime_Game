@@ -150,7 +150,7 @@ class GradingConfig:
 class ValidationContext:
     """Context passed to validation checks."""
     ticket_id: str
-    lab_path: str
+    lab_path: str = ""
     mock_cli_state: Optional[Dict[str, Any]] = None  # mock CLI state if using fallback
     eveng_available: bool = False
     command_history: List[Dict[str, Any]] = field(default_factory=list)  # player's CLI commands
@@ -294,6 +294,11 @@ class ValidationEngine:
                 await asyncio.sleep(criterion.convergence_delay_ms / 1000.0)
 
             result = await self._execute_check(criterion)
+            # Report criterion duration as the full validation wait + check time.
+            # The convergence wait happens outside _execute_check(), but callers use
+            # duration_ms to reason about validation ordering and elapsed criterion time.
+            if criterion.convergence_delay_ms > 0:
+                result.duration_ms += criterion.convergence_delay_ms
             results.append(result)
 
         return results
