@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { Terminal } from './Terminal';
 
@@ -9,6 +9,73 @@ const DEMO_NODES = [
   { id: 3, name: 'SW1', type: 'switch', status: 'running' as const },
   { id: 4, name: 'PC1', type: 'linux', status: 'stopped' as const },
 ];
+
+// Quick reference commands
+interface QuickRefEntry {
+  label: string;
+  command: string;
+  description: string;
+  category: string;
+}
+
+const QUICK_REF_COMMANDS: QuickRefEntry[] = [
+  { label: 'show version', command: 'show version', description: 'Display OS version', category: 'Info' },
+  { label: 'show running-config', command: 'show running-config', description: 'Current config', category: 'Info' },
+  { label: 'show interfaces', command: 'show interfaces', description: 'Interface status', category: 'Info' },
+  { label: 'show ip route', command: 'show ip route', description: 'Routing table', category: 'Info' },
+  { label: 'show vlan', command: 'show vlan', description: 'VLAN database', category: 'Info' },
+  { label: 'ping', command: 'ping ', description: 'Test connectivity', category: 'Diag' },
+  { label: 'traceroute', command: 'traceroute ', description: 'Trace route path', category: 'Diag' },
+  { label: 'show logging', command: 'show logging', description: 'System logs', category: 'Diag' },
+  { label: 'show cdp neighbors', command: 'show cdp neighbors', description: 'CDP neighbors', category: 'Diag' },
+  { label: 'configure terminal', command: 'configure terminal', description: 'Enter config mode', category: 'Config' },
+  { label: 'show access-lists', command: 'show access-lists', description: 'ACL entries', category: 'Config' },
+  { label: 'show mac address-table', command: 'show mac address-table', description: 'MAC table', category: 'Info' },
+  { label: 'show ip ospf neighbor', command: 'show ip ospf neighbor', description: 'OSPF neighbors', category: 'Info' },
+  { label: 'show ip bgp summary', command: 'show ip bgp summary', description: 'BGP summary', category: 'Info' },
+  { label: 'clear counters', command: 'clear counters', description: 'Reset counters', category: 'Config' },
+];
+
+// Tab type
+interface TerminalTab {
+  id: number;
+  nodeId: number;
+  nodeName: string;
+}
+
+// useResizable hook for split-pane
+function useResizable(initialRatio: number = 0.35) {
+  const [ratio, setRatio] = useState(initialRatio);
+  const isDragging = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!isDragging.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const newRatio = (ev.clientX - rect.left) / rect.width;
+      setRatio(Math.max(0.15, Math.min(0.6, newRatio)));
+    };
+
+    const handleMouseUp = () => {
+      isDragging.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  return { ratio, onMouseDown, containerRef };
+}
 
 function TopologyView() {
   return (
@@ -37,12 +104,12 @@ function TopologyView() {
 
 function NodeList({
   nodes,
-  activeNode,
+  activeNodeId,
   onSelectNode,
   disabled,
 }: {
   nodes: typeof DEMO_NODES;
-  activeNode: number | null;
+  activeNodeId: number | null;
   onSelectNode: (id: number) => void;
   disabled?: boolean;
 }) {
@@ -57,7 +124,7 @@ function NodeList({
           className={`w-full flex items-center gap-3 p-2 rounded transition-all ${
             disabled
               ? 'cursor-not-allowed opacity-50'
-              : activeNode === node.id
+              : activeNodeId === node.id
                 ? 'bg-cyan-500/30 border border-cyan-500'
                 : 'bg-black/20 border border-transparent hover:bg-white/10'
           }`}
@@ -67,6 +134,9 @@ function NodeList({
           }`} />
           <span className="text-white font-mono">{node.name}</span>
           <span className="text-gray-500 text-xs">{node.type}</span>
+          {node.status === 'stopped' && (
+            <span className="text-xs text-red-400 ml-auto">stopped</span>
+          )}
         </button>
       ))}
     </div>
@@ -185,10 +255,8 @@ function CommandReference() {
   const activeTicket = useGameStore((s) => s.activeTicket);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Derive commands from the ticket hints
   const commands = activeTicket
     ? activeTicket.hints.map(h => {
-        // Extract command from hint text if it contains a command-like pattern
         const cmdMatch = h.text.match(/Command:\s*(.+)/);
         const showMatch = h.text.match(/'([^']+)'/);
         const cmd = cmdMatch ? cmdMatch[1].trim() : showMatch ? showMatch[1] : h.text;
@@ -303,12 +371,142 @@ function SandboxToolbar() {
   );
 }
 
+// Quick Reference Sidebar
+function QuickRefSidebar({ disabled }: { disabled?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copiedLabel, setCopiedLabel] = useState<string | null>(null);
+
+  const handleCopy = useCallback((entry: QuickRefEntry) => {
+    if (disabled) return;
+    navigator.clipboard.writeText(entry.command).then(() => {
+      setCopiedLabel(entry.label);
+      setTimeout(() => setCopiedLabel(null), 1500);
+    }).catch(() => {
+      // Clipboard API failed — ignore silently
+    });
+  }, [disabled]);
+
+  const categories = [...new Set(QUICK_REF_COMMANDS.map((c) => c.category))];
+
+  if (!expanded) {
+    return (
+      <div className="relative flex flex-col border-l border-gray-800 bg-[#0d0d1a]" role="complementary" aria-label="Quick reference sidebar">
+        <button
+          onClick={() => setExpanded(true)}
+          className="w-2.5 flex-1 flex items-center justify-center hover:bg-cyan-500/10 transition-colors group"
+          title="Quick Reference Commands"
+          aria-label="Expand quick reference commands"
+        >
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-gray-500 group-hover:text-cyan-400 text-xs rotate-90 whitespace-nowrap">Commands</span>
+            <span className="text-gray-600 group-hover:text-cyan-400 text-lg">◀</span>
+          </div>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-64 flex flex-col border-l border-gray-800 bg-[#0d0d1a] overflow-hidden" role="complementary" aria-label="Quick reference commands panel">
+      <div className="p-3 border-b border-gray-800 flex items-center justify-between">
+        <h3 className="font-bold text-white text-sm flex items-center gap-2">
+          <span>⚡</span>
+          <span>Quick Ref</span>
+        </h3>
+        <button
+          onClick={() => setExpanded(false)}
+          className="text-gray-500 hover:text-white text-sm px-1"
+          title="Collapse"
+          aria-label="Collapse quick reference"
+        >
+          ▶
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-2 space-y-3">
+        {categories.map((category) => (
+          <div key={category}>
+            <div className="text-xs text-cyan-500/60 font-mono mb-1.5 px-1">{category}</div>
+            <div className="space-y-0.5">
+              {QUICK_REF_COMMANDS.filter((c) => c.category === category).map((entry) => (
+                <button
+                  key={entry.label}
+                  onClick={() => handleCopy(entry)}
+                  disabled={disabled}
+                  className={`w-full text-left px-2 py-1 rounded text-xs group transition-colors ${
+                    disabled
+                      ? 'cursor-not-allowed opacity-40'
+                      : 'hover:bg-white/5'
+                  }`}
+                  title={`${entry.description} — click to copy`}
+                  aria-label={`Copy ${entry.label}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-white/80 group-hover:text-cyan-400 truncate">
+                      {entry.label}
+                    </span>
+                    <span className="text-gray-600 group-hover:text-cyan-500 ml-1 flex-shrink-0">
+                      {copiedLabel === entry.label ? '✓' : '📋'}
+                    </span>
+                  </div>
+                  <div className="text-gray-500 text-[10px] truncate">{entry.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function TerminalView() {
   const { setView, activeTicket, sessionState, sandboxState, exitSandbox } = useGameStore();
-  const [activeNode, setActiveNode] = useState<number | null>(1);
-  const activeNodeData = DEMO_NODES.find(n => n.id === activeNode);
   const isPaused = sessionState.isPaused;
   const isSandbox = sandboxState.active;
+
+  // Multi-tab state
+  const [tabs, setTabs] = useState<TerminalTab[]>([
+    { id: 1, nodeId: 1, nodeName: 'R1' },
+  ]);
+  const [activeTabId, setActiveTabId] = useState<number>(1);
+  const nextTabId = useRef(2);
+
+  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const activeNodeData = DEMO_NODES.find((n) => n.id === activeTab?.nodeId);
+
+  // Resizable split pane
+  const { ratio: leftRatio, onMouseDown, containerRef } = useResizable(0.28);
+
+  const openTab = useCallback((nodeId: number) => {
+    const node = DEMO_NODES.find((n) => n.id === nodeId);
+    if (!node) return;
+    const existing = tabs.find((t) => t.nodeId === nodeId);
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    const newTab: TerminalTab = {
+      id: nextTabId.current++,
+      nodeId: node.id,
+      nodeName: node.name,
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+  }, [tabs]);
+
+  const closeTab = useCallback((tabId: number) => {
+    setTabs((prev) => {
+      const remaining = prev.filter((t) => t.id !== tabId);
+      if (remaining.length === 0) {
+        return prev;
+      }
+      if (tabId === activeTabId && remaining.length > 0) {
+        setActiveTabId(remaining[remaining.length - 1].id);
+      }
+      return remaining;
+    });
+  }, [activeTabId]);
 
   const handleBack = () => {
     if (isSandbox) {
@@ -320,8 +518,14 @@ export function TerminalView() {
 
   return (
     <div className="absolute inset-0 flex z-20 bg-[#0a0a15]" role="application" aria-label="Network terminal console">
-      {/* Left panel - Topology & Nodes */}
-      <div className="w-64 flex flex-col border-r border-gray-800 bg-[#0d0d1a]" role="navigation" aria-label="Device panel">
+      {/* Left panel — Topology & Nodes (resizable) */}
+      <div
+        ref={containerRef}
+        className="flex flex-col border-r border-gray-800 bg-[#0d0d1a]"
+        style={{ width: `${leftRatio * 100}%`, minWidth: 180, maxWidth: '50%' }}
+        role="navigation"
+        aria-label="Device panel"
+      >
         <div className="p-4 border-b border-gray-800">
           <button
             onClick={handleBack}
@@ -340,8 +544,8 @@ export function TerminalView() {
           <TopologyView />
           <NodeList
             nodes={DEMO_NODES}
-            activeNode={activeNode}
-            onSelectNode={setActiveNode}
+            activeNodeId={activeTab?.nodeId ?? null}
+            onSelectNode={openTab}
             disabled={isPaused}
           />
 
@@ -354,8 +558,14 @@ export function TerminalView() {
         </div>
       </div>
 
-      {/* Center - Terminal */}
-      <div className="flex-1 flex flex-col" role="main" aria-label="Terminal console">
+      {/* Resizable divider */}
+      <div
+        className="w-[2px] bg-gray-700 hover:bg-cyan-500 cursor-col-resize flex-shrink-0 transition-colors"
+        onMouseDown={onMouseDown}
+      />
+
+      {/* Center — Terminal with tabs */}
+      <div className="flex-1 flex flex-col min-w-0" role="main" aria-label="Terminal console">
         {/* Sandbox toolbar */}
         {isSandbox && <SandboxToolbar />}
 
@@ -364,7 +574,7 @@ export function TerminalView() {
 
         {/* Solution panel — shown when toggled in sandbox */}
         {isSandbox && sandboxState.showSolution && activeTicket && (
-          <div className="px-4 py-3 bg-green-500/5 border-b border-green-500/20">
+          <div className="px-4 py-3 bg-green-500/5 border-b border-green-500/20" role="region" aria-label="Solution guide">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-bold text-green-400">💡 Solution Guide</span>
               <span className="text-xs text-green-500/60">From ticket hints</span>
@@ -380,9 +590,9 @@ export function TerminalView() {
           </div>
         )}
 
-        {/* Diff panel — placeholder for when toggled */}
+        {/* Diff panel — shown when toggled in sandbox */}
         {isSandbox && sandboxState.showDiff && (
-          <div className="px-4 py-3 bg-purple-500/5 border-b border-purple-500/20">
+          <div className="px-4 py-3 bg-purple-500/5 border-b border-purple-500/20" role="region" aria-label="Config diff">
             <div className="text-sm font-bold text-purple-400 mb-2">📊 Config Diff</div>
             <div className="text-xs text-gray-500">
               Compare your current configuration against the expected solution.
@@ -391,26 +601,85 @@ export function TerminalView() {
           </div>
         )}
 
-        <div className="flex-1 flex flex-col p-4">
-          {activeNode && activeNodeData ? (
+        {/* Tab bar */}
+        <div className="flex items-center bg-black/30 border-b border-gray-800">
+          <div className="flex-1 flex items-center overflow-x-auto">
+            {tabs.map((tab) => (
+              <div
+                key={tab.id}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm border-r border-gray-800 cursor-pointer transition-colors ${
+                  tab.id === activeTabId
+                    ? 'bg-[#0d0d1a] text-cyan-400 border-t-2 border-t-cyan-500'
+                    : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                }`}
+                onClick={() => setActiveTabId(tab.id)}
+                role="tab"
+                aria-selected={tab.id === activeTabId}
+                aria-label={`Terminal tab ${tab.nodeName}`}
+              >
+                <span className={`w-2 h-2 rounded-full ${
+                  DEMO_NODES.find((n) => n.id === tab.nodeId)?.status === 'running'
+                    ? 'bg-green-500'
+                    : 'bg-gray-500'
+                }`} />
+                <span className="font-mono text-xs">{tab.nodeName}</span>
+                {tabs.length > 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                    className="ml-1 text-gray-600 hover:text-red-400 text-xs leading-none"
+                    title="Close tab"
+                    aria-label={`Close ${tab.nodeName} tab`}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          {/* New tab button */}
+          <button
+            onClick={() => openTab(1)}
+            disabled={isPaused}
+            className={`px-3 py-2 text-gray-400 hover:text-white hover:bg-white/5 border-l border-gray-800 text-sm ${
+              isPaused ? 'cursor-not-allowed opacity-50' : ''
+            }`}
+            title="New terminal tab"
+            aria-label="Open new terminal tab"
+          >
+            +
+          </button>
+        </div>
+
+        {/* Terminal content */}
+        <div className="flex-1 flex p-4 min-h-0">
+          {activeTab && activeNodeData ? (
             <Terminal
+              key={activeTab.id}
               nodeName={activeNodeData.name}
-              onClose={() => setActiveNode(null)}
+              nodeId={activeNodeData.id}
+              onClose={
+                tabs.length > 1
+                  ? () => closeTab(activeTab.id)
+                  : undefined
+              }
               isPaused={isPaused}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-400">
               <div className="text-center">
-                <p className="text-xl mb-2">Select a node to connect</p>
-                <p className="text-sm">Choose from the node list on the left</p>
+                <p className="text-xl mb-2">No terminal open</p>
+                <p className="text-sm">Select a node from the left panel</p>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Right panel - Ticket details */}
-      <div className="w-80 flex flex-col border-l border-gray-800 bg-[#0d0d1a]" role="complementary" aria-label="Ticket details panel">
+      {/* Right panel — Ticket details */}
+      <div className="w-80 flex flex-col border-l border-gray-800 bg-[#0d0d1a] flex-shrink-0" role="complementary" aria-label="Ticket details panel">
         <div className="p-4 border-b border-gray-800">
           <h3 className="font-bold text-white flex items-center gap-2">
             <span>📋</span>
@@ -450,6 +719,9 @@ export function TerminalView() {
           </div>
         )}
       </div>
+
+      {/* Quick ref sidebar — collapsed by default */}
+      <QuickRefSidebar disabled={isPaused} />
     </div>
   );
 }
