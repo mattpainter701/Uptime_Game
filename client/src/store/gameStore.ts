@@ -2,12 +2,40 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Player, Ticket, Lab, GameView, GameSettings, TimeOfDay, UptimeState, NodeUptimeStats, GameConfig, PlayerPosition, MovementState, ItemId, SessionState, SessionRecord, TutorialState, TutorialStep, SandboxState, FloorId, NPCState, NPCDialogueState, InteractiveObjectState, WeatherState, WeatherType, AmbientSoundState, DeskCustomization, CoffeeBoost } from '../types/game';
 import { ITEM_DEFINITIONS, TUTORIAL_STEP_ORDER } from '../types/game';
+import type { PlayerShopState, PlayerPrestigeState, DailyChallengeState, DailyChallenge, ComputedBuffs, ShopItemId, ActiveConsumable } from '../types/game';
 import { getCareerLevelFromXp, getXpToNextCareerLevel } from '../lib/careerProgression';
 import { getReputationLossForFailure } from '../lib/reputationProgression';
+import { SHOP_ITEMS, getShopItem } from '../lib/shopData';
+import { getOrGenerateChallenges } from '../lib/dailyChallenges';
+import { getPrestigeCost, executePrestige, computePrestigeMultiplier } from '../lib/prestigeSystem';
 import { api } from '../services/api';
 import type { NodeUptimeStats as ServerNodeStats } from '../services/api';
 import { UptimeWebSocket, type UptimeUpdate } from '../services/websocket';
 import { TUTORIAL_TICKETS } from '../lib/tutorialTickets';
+
+// === Sprint 7: Buff application helper ===
+function applyBuff(buffs: ComputedBuffs, effect: { type: string; value: number; isFlat: boolean }): void {
+  switch (effect.type) {
+    case 'xp_multiplier':
+      buffs.xpMultiplier *= effect.isFlat ? (1 + effect.value) : effect.value;
+      break;
+    case 'credit_multiplier':
+      buffs.creditMultiplier *= effect.isFlat ? (1 + effect.value) : effect.value;
+      break;
+    case 'reputation_multiplier':
+      buffs.reputationMultiplier *= effect.isFlat ? (1 + effect.value) : effect.value;
+      break;
+    case 'time_extension':
+      buffs.timeExtensionMinutes += effect.value;
+      break;
+    case 'hint_discount':
+      buffs.hintDiscountPercent += effect.value;
+      break;
+    case 'item_drop_bonus':
+      buffs.itemDropBonus += effect.value;
+      break;
+  }
+}
 
 interface GameState {
   // Player state
@@ -89,6 +117,15 @@ interface GameState {
 
   // Sprint 8: Coffee boost
   coffeeBoost: CoffeeBoost;
+
+  // Sprint 7: Shop system
+  shopState: PlayerShopState;
+
+  // Sprint 7: Prestige system
+  prestigeState: PlayerPrestigeState;
+
+  // Sprint 7: Daily challenges
+  dailyChallengeState: DailyChallengeState | null;
 
   // Actions
   setView: (view: GameView) => void;
@@ -198,6 +235,21 @@ interface GameState {
   // Sprint 8: Coffee boost
   useCoffeeBoost: () => void;
   checkCoffeeBoost: () => void;
+
+  // Sprint 7: Shop actions
+  buyShopItem: (itemId: ShopItemId) => boolean;
+  activateConsumable: (itemId: ShopItemId) => boolean;
+  checkExpiredConsumables: () => void;
+  computeBuffs: () => ComputedBuffs;
+
+  // Sprint 7: Daily challenge actions
+  claimDailyChallenge: (challengeId: string) => boolean;
+  updateChallengeProgress: (type: string, amount: number) => void;
+  regenerateChallenges: () => void;
+
+  // Sprint 7: Prestige actions
+  canPrestige: () => { can: boolean; nextLevel: { level: number; name: string; requiredCredits: number; multiplier: number; title: string; icon: string } | null };
+  doPrestige: () => boolean;
 }
 
 // Sample tickets for demo
@@ -658,8 +710,35 @@ export const useGameStore = create<GameState>()(
       // Sprint 8: Coffee boost
       coffeeBoost: { active: false, expiresAt: null, timeAddedMinutes: 2 },
 
+      // Sprint 7: Shop state
+      shopState: {
+        ownedItems: [],
+        activeConsumables: [],
+      },
+
+      // Sprint 7: Prestige state
+      prestigeState: {
+        prestigeLevel: 0,
+        prestigeMultiplier: 1.0,
+        persistedUpgrades: [],
+      },
+
+      // Sprint 7: Daily challenges (generated on first access)
+      dailyChallengeState: null,
+
       // View actions
-      setView: (view) => set({ currentView: view }),
+      setView: (view) => {
+        // Sprint 7: Auto-generate daily challenges when opening shop
+        if (view === 'shop') {
+          const current = get().dailyChallengeState;
+          const fresh = getOrGenerateChallenges(current);
+          if (fresh !== current) {
+            set({ dailyChallengeState: fresh, currentView: view });
+            return;
+          }
+        }
+        set({ currentView: view });
+      },
 
       setActiveTicket: (ticket) => set({ activeTicket: ticket }),
 
@@ -763,12 +842,16 @@ export const useGameStore = create<GameState>()(
         // Stop timer
         get().stopTicketTimer();
 
-        // Consume items that should be used when completing this ticket
+        // Consume items
         if (activeTicket.consumeItems && activeTicket.consumeItems.length > 0) {
           for (const itemId of activeTicket.consumeItems) {
             get().useItem(itemId);
           }
         }
+
+        // Sprint 7: Clean up expired consumables and compute buffs
+        get().checkExpiredConsumables();
+        const buffs = get().computeBuffs();
 
         // Stop uptime tracking and get final stats
         let uptimeBonus = 1.0;
@@ -787,13 +870,19 @@ export const useGameStore = create<GameState>()(
           uptimePoints = uptime.pointsEarned;
         }
 
-        // Calculate rewards with bonus
+        // Calculate rewards with bonus + Sprint 7 buffs
         const baseCredits = activeTicket.rewardCredits;
         const baseXp = activeTicket.rewardXp;
-        const totalCredits = Math.floor(baseCredits * uptimeBonus) + uptimePoints;
-        const totalXp = Math.floor(baseXp * uptimeBonus);
-        const reputationGain = Math.max(1, 10 - uptime.totalIncidents);
+        const totalCredits = Math.floor(baseCredits * uptimeBonus * buffs.creditMultiplier) + uptimePoints;
+        const totalXp = Math.floor(baseXp * uptimeBonus * buffs.xpMultiplier);
+        const reputationGain = Math.floor(Math.max(1, 10 - uptime.totalIncidents) * buffs.reputationMultiplier);
         const validationScore = 1.0; // Successful completion = perfect score
+
+        // Track challenge progress
+        get().updateChallengeProgress('complete_tickets', 1);
+        get().updateChallengeProgress('earn_credits', totalCredits);
+        get().updateChallengeProgress('earn_xp', totalXp);
+        if (uptime.totalIncidents === 0) get().updateChallengeProgress('fix_incidents', 1);
 
         // Create session record
         const record: SessionRecord = {
@@ -928,29 +1017,40 @@ export const useGameStore = create<GameState>()(
         get().recordTicketResult(record);
       },
 
-      revealHint: (hintIndex) => set((state) => {
-        if (!state.activeTicket) return state;
+      revealHint: (hintIndex) => {
+        const state = get();
+        if (!state.activeTicket) return;
         const hint = state.activeTicket.hints[hintIndex];
-        if (!hint || hint.revealed) return state;
+        if (!hint || hint.revealed) return;
 
         // Sandbox mode: hints are free
         if (state.sandboxState.active) {
           const newHints = [...state.activeTicket.hints];
           newHints[hintIndex] = { ...hint, revealed: true };
-          return { activeTicket: { ...state.activeTicket, hints: newHints } };
+          set({ activeTicket: { ...state.activeTicket, hints: newHints } });
+          return;
         }
 
+        // Sprint 7: Apply hint discount from buffs
+        get().checkExpiredConsumables();
+        const buffs = get().computeBuffs();
+        const discountMultiplier = Math.max(0, 1 - buffs.hintDiscountPercent / 100);
+        const actualCost = Math.floor(hint.cost * discountMultiplier);
+
         // Career mode: hints cost credits
-        if (state.player.credits < hint.cost) return state;
+        if (state.player.credits < actualCost) return;
 
         const newHints = [...state.activeTicket.hints];
         newHints[hintIndex] = { ...hint, revealed: true };
 
-        return {
+        set({
           activeTicket: { ...state.activeTicket, hints: newHints },
-          player: { ...state.player, credits: state.player.credits - hint.cost }
-        };
-      }),
+          player: { ...state.player, credits: state.player.credits - actualCost },
+        });
+
+        // Track challenge progress
+        get().updateChallengeProgress('use_hints', 1);
+      },
 
       // Uptime tracking actions
       startUptimeTracking: async (labPath, nodeIds) => {
@@ -1089,7 +1189,12 @@ export const useGameStore = create<GameState>()(
         if (sandboxState.active) return;
 
         const elapsed = Date.now() - activeTicket.startedAt;
-        const totalMs = activeTicket.timeLimit * 60 * 1000;
+
+        // Sprint 7: Add time extension from buffs
+        get().checkExpiredConsumables();
+        const buffs = get().computeBuffs();
+        const timeExtensionMs = buffs.timeExtensionMinutes * 60 * 1000;
+        const totalMs = (activeTicket.timeLimit * 60 * 1000) + timeExtensionMs;
         const remaining = totalMs - elapsed;
 
         if (remaining <= 0) {
@@ -1800,10 +1905,233 @@ export const useGameStore = create<GameState>()(
       },
 
       checkCoffeeBoost: () => {},
+
+      // === Sprint 7: Buff helper ===
+      // (defined inside create callback so it has access to none of the store;
+      //  it's a pure function used by computeBuffs)
+
+      // === Sprint 7: Shop System ===
+
+      buyShopItem: (itemId) => {
+        const item = getShopItem(itemId);
+        if (!item) return false;
+
+        const { player, shopState } = get();
+
+        // Level gate
+        if (player.level < item.requiredLevel) return false;
+
+        // Already owned (non-consumables max 1)
+        if (item.maxPurchases === 1 && shopState.ownedItems.includes(itemId)) return false;
+
+        // Count purchases for multi-buy items
+        const purchaseCount = shopState.ownedItems.filter(id => id === itemId).length;
+        if (purchaseCount >= item.maxPurchases) return false;
+
+        // Check credits
+        if (player.credits < item.cost) return false;
+
+        set((state) => ({
+          player: { ...state.player, credits: state.player.credits - item.cost },
+          shopState: {
+            ...state.shopState,
+            ownedItems: [...state.shopState.ownedItems, itemId],
+          },
+        }));
+
+        // Track challenge progress
+        get().updateChallengeProgress('buy_items', 1);
+        return true;
+      },
+
+      activateConsumable: (itemId) => {
+        const { shopState } = get();
+        const item = getShopItem(itemId);
+
+        if (!item || !item.consumable) return false;
+
+        // Must own at least one
+        const ownedIdx = shopState.ownedItems.indexOf(itemId);
+        if (ownedIdx === -1) return false;
+
+        // Remove one from owned items
+        const newOwned = [...shopState.ownedItems];
+        newOwned.splice(ownedIdx, 1);
+
+        const now = Date.now();
+        const durationMs = (item.consumable.duration || 1800) * 1000;
+
+        const activeConsumable: ActiveConsumable = {
+          itemId,
+          buff: item.consumable,
+          activatedAt: now,
+          expiresAt: now + durationMs,
+        };
+
+        set((state) => ({
+          shopState: {
+            ...state.shopState,
+            ownedItems: newOwned,
+            activeConsumables: [...state.shopState.activeConsumables, activeConsumable],
+          },
+        }));
+
+        return true;
+      },
+
+      checkExpiredConsumables: () => {
+        const { shopState } = get();
+        const now = Date.now();
+        const stillActive = shopState.activeConsumables.filter(ac => ac.expiresAt > now);
+
+        if (stillActive.length !== shopState.activeConsumables.length) {
+          set((state) => ({
+            shopState: {
+              ...state.shopState,
+              activeConsumables: stillActive,
+            },
+          }));
+        }
+      },
+
+      computeBuffs: () => {
+        const { shopState, prestigeState, uptime } = get();
+
+        const buffs: ComputedBuffs = {
+          xpMultiplier: 1.0,
+          creditMultiplier: 1.0,
+          reputationMultiplier: 1.0,
+          timeExtensionMinutes: 0,
+          hintDiscountPercent: 0,
+          itemDropBonus: 0,
+        };
+
+        // Permanent item buffs
+        const ownedSet = new Set(shopState.ownedItems);
+        for (const itemId of ownedSet) {
+          const item = getShopItem(itemId);
+          if (item?.buff) {
+            applyBuff(buffs, item.buff);
+          }
+        }
+
+        // Active consumable buffs
+        for (const ac of shopState.activeConsumables) {
+          applyBuff(buffs, ac.buff);
+        }
+
+        // Uptime bonus
+        if (uptime.uptimePercentage >= 99) {
+          buffs.xpMultiplier *= 1.1;
+          buffs.creditMultiplier *= 1.1;
+        } else if (uptime.uptimePercentage >= 95) {
+          buffs.xpMultiplier *= 1.05;
+          buffs.creditMultiplier *= 1.05;
+        }
+
+        // Prestige multiplier
+        const prestigeMult = prestigeState.prestigeMultiplier;
+        buffs.xpMultiplier *= prestigeMult;
+        buffs.creditMultiplier *= prestigeMult;
+        buffs.reputationMultiplier *= prestigeMult;
+
+        return buffs;
+      },
+
+      // === Sprint 7: Daily Challenges ===
+
+      claimDailyChallenge: (challengeId) => {
+        const { dailyChallengeState: dc } = get();
+        if (!dc) return false;
+
+        const challenge = dc.challenges.find(c => c.id === challengeId);
+        if (!challenge || !challenge.completed || challenge.claimed) return false;
+
+        set((state) => ({
+          player: {
+            ...state.player,
+            credits: state.player.credits + challenge.rewardCredits,
+            xp: state.player.xp + challenge.rewardXp,
+          },
+          dailyChallengeState: {
+            ...dc,
+            challenges: dc.challenges.map(c =>
+              c.id === challengeId ? { ...c, claimed: true } : c
+            ),
+          },
+        }));
+
+        return true;
+      },
+
+      updateChallengeProgress: (type, amount) => {
+        const { dailyChallengeState: dc } = get();
+        if (!dc) return;
+
+        const updated = dc.challenges.map(c => {
+          if (c.completed || c.type !== type) return c;
+          const newProgress = Math.min(c.progress + amount, c.target);
+          return {
+            ...c,
+            progress: newProgress,
+            completed: newProgress >= c.target,
+          };
+        });
+
+        // Only update if something changed
+        const changed = updated.some((c, i) => c.progress !== dc.challenges[i].progress);
+        if (changed) {
+          set({ dailyChallengeState: { ...dc, challenges: updated } });
+        }
+      },
+
+      regenerateChallenges: () => {
+        set({ dailyChallengeState: getOrGenerateChallenges(null) });
+      },
+
+      // === Sprint 7: Prestige System ===
+
+      canPrestige: () => {
+        const { player, prestigeState } = get();
+        return canPrestige(player.credits, player.level, prestigeState.prestigeLevel);
+      },
+
+      doPrestige: () => {
+        const { player, shopState, prestigeState } = get();
+        const cost = getPrestigeCost(prestigeState.prestigeLevel);
+        if (!cost || player.credits < cost.credits) return false;
+
+        const { newPrestige, persistedItems } = executePrestige(
+          prestigeState,
+          shopState.ownedItems,
+          SHOP_ITEMS,
+        );
+
+        // Reset player: level 1, 0 XP, pay cost, but keep persisted items
+        set({
+          player: {
+            ...player,
+            level: 1,
+            xp: 0,
+            xpToNextLevel: getXpToNextCareerLevel(0),
+            title: 'Help Desk Tech',
+            floor: 1,
+            credits: player.credits - cost.credits,
+          },
+          shopState: {
+            ...shopState,
+            ownedItems: persistedItems,
+            activeConsumables: [],
+          },
+          prestigeState: newPrestige,
+        });
+
+        return true;
+      },
     }),
     {
       name: 'netops-tower-save',
-      version: 5,
+      version: 6,
       migrate: (persistedState: any, _version: number) => {
         // Migration v0 → v1: old format only had player, settings, inventory
         // Fill in defaults for all the new fields introduced in v1
@@ -1860,6 +2188,12 @@ export const useGameStore = create<GameState>()(
           persistedState.deskCustomization = { decoration: 'default', deskColor: '#f0f0f0', chairColor: '#2d2d2d', monitorCount: 3 };
           persistedState.coffeeBoost = { active: false, expiresAt: null, timeAddedMinutes: 2 };
         }
+        // Migration v5 -> v6: add Sprint 7 fields
+        if (_version < 6) {
+          persistedState.shopState = persistedState.shopState ?? { ownedItems: [], activeConsumables: [] };
+          persistedState.prestigeState = persistedState.prestigeState ?? { prestigeLevel: 0, prestigeMultiplier: 1.0, persistedUpgrades: [] };
+          persistedState.dailyChallengeState = persistedState.dailyChallengeState ?? null;
+        }
         return persistedState;
       },
       partialize: (state) => ({
@@ -1887,6 +2221,10 @@ export const useGameStore = create<GameState>()(
         ambientSound: state.ambientSound,
         deskCustomization: state.deskCustomization,
         coffeeBoost: state.coffeeBoost,
+        // Sprint 7 persistence
+        shopState: state.shopState,
+        prestigeState: state.prestigeState,
+        dailyChallengeState: state.dailyChallengeState,
       }),
       onRehydrateStorage: () => {
         return (hydratedState, error) => {
