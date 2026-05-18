@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { SearchAddon } from '@xterm/addon-search';
+import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { useGameStore } from '../../store/gameStore';
 import { ConsoleWebSocket } from '../../services/websocket';
@@ -101,7 +103,76 @@ const themes: Record<string, TerminalTheme> = {
     brightCyan: '#56b6c2',
     brightWhite: '#ffffff',
   },
+  'amber-retro': {
+    background: '#1a1000',
+    foreground: '#ffb000',
+    cursor: '#ff8800',
+    cursorAccent: '#1a1000',
+    selection: 'rgba(255, 176, 0, 0.3)',
+    black: '#1a1000',
+    red: '#ff4400',
+    green: '#ffb000',
+    yellow: '#ffcc00',
+    blue: '#ff8800',
+    magenta: '#ff6600',
+    cyan: '#ffaa00',
+    white: '#ffeebb',
+    brightBlack: '#554400',
+    brightRed: '#ff6644',
+    brightGreen: '#ffcc44',
+    brightYellow: '#ffee44',
+    brightBlue: '#ffaa44',
+    brightMagenta: '#ff8844',
+    brightCyan: '#ffcc44',
+    brightWhite: '#ffffdd',
+  },
+  'solarized-dark': {
+    background: '#002b36',
+    foreground: '#839496',
+    cursor: '#93a1a1',
+    cursorAccent: '#002b36',
+    selection: 'rgba(131, 148, 150, 0.3)',
+    black: '#073642',
+    red: '#dc322f',
+    green: '#859900',
+    yellow: '#b58900',
+    blue: '#268bd2',
+    magenta: '#d33682',
+    cyan: '#2aa198',
+    white: '#eee8d5',
+    brightBlack: '#002b36',
+    brightRed: '#cb4b16',
+    brightGreen: '#586e75',
+    brightYellow: '#657b83',
+    brightBlue: '#839496',
+    brightMagenta: '#6c71c4',
+    brightCyan: '#93a1a1',
+    brightWhite: '#fdf6e3',
+  },
 };
+
+const FONT_FAMILIES: Record<string, string> = {
+  jetbrains: '"JetBrains Mono", "Fira Code", monospace',
+  fira: '"Fira Code", "JetBrains Mono", monospace',
+  source: '"Source Code Pro", "Fira Code", monospace',
+  ibm: '"IBM Plex Mono", "Fira Code", monospace',
+  ubuntu: '"Ubuntu Mono", "Fira Code", monospace',
+};
+
+const HISTORY_MAX = 200;
+
+function sanitizePaste(text: string): string {
+  // Strip C0 control characters (0x00-0x1F except tab, CR, LF)
+  let cleaned = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+  // Strip ESC sequences
+  cleaned = cleaned.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+  cleaned = cleaned.replace(/\x1b/g, '');
+  // Truncate if >4KB
+  if (cleaned.length > 4096) {
+    cleaned = cleaned.slice(0, 4096);
+  }
+  return cleaned;
+}
 
 interface TerminalProps {
   nodeName?: string;
@@ -121,9 +192,15 @@ export function Terminal({
   isPaused = false,
 }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
+  const searchBarRef = useRef<HTMLInputElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const wsRef = useRef<ConsoleWebSocket | null>(null);
+  const sessionLogRef = useRef<string[]>([]);
+  const historyRef = useRef<string[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const currentInputRef = useRef<string>('');
   const createCli = useCallback((hostname: string) => {
     return createMockCliForHostname(hostname);
   }, []);
@@ -133,6 +210,7 @@ export function Terminal({
   const [connected, setConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const [isRealMode, setIsRealMode] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
   const settings = useGameStore((state) => state.settings);
 
   useEffect(() => {
@@ -147,9 +225,29 @@ export function Terminal({
     cliRef.current = createCli(nodeName);
   }, [createCli, nodeName]);
 
-  const writePrompt = useCallback((term: XTerm, prompt?: string) => {
-    term.write(`\r\n\x1b[1;33m${prompt ?? cliRef.current.getPrompt()}\x1b[0m `);
+  const appendSessionLog = useCallback((text: string) => {
+    sessionLogRef.current.push(text);
+    if (sessionLogRef.current.length > 50000) {
+      sessionLogRef.current = sessionLogRef.current.slice(-25000);
+    }
   }, []);
+
+  const downloadSessionLog = useCallback(() => {
+    const content = sessionLogRef.current.join('\n');
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `netops-terminal-${nodeName}-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [nodeName]);
+
+  const writePrompt = useCallback((term: XTerm, prompt?: string) => {
+    const promptStr = `\r\n\x1b[1;33m${prompt ?? cliRef.current.getPrompt()}\x1b[0m `;
+    term.write(promptStr);
+    appendSessionLog(promptStr.replace(/\x1b\[[0-9;]*m/g, ''));
+  }, [appendSessionLog]);
 
   const processCommand = useCallback((term: XTerm, command: string) => {
     const trimmed = command.trim();
@@ -159,6 +257,16 @@ export function Terminal({
       return;
     }
 
+    // Add to history
+    if (trimmed !== historyRef.current[historyRef.current.length - 1]) {
+      historyRef.current.push(trimmed);
+      if (historyRef.current.length > HISTORY_MAX) {
+        historyRef.current.shift();
+      }
+    }
+    historyIndexRef.current = -1;
+    appendSessionLog(trimmed);
+
     if (trimmed.toLowerCase() === 'clear') {
       term.clear();
       writePrompt(term);
@@ -167,7 +275,10 @@ export function Terminal({
 
     const result = cliRef.current.run(command);
     term.writeln('');
-    result.lines.forEach((line) => term.writeln(line));
+    result.lines.forEach((line) => {
+      term.writeln(line);
+      appendSessionLog(line);
+    });
 
     if (result.shouldDisconnect) {
       onClose?.();
@@ -175,7 +286,7 @@ export function Terminal({
     }
 
     writePrompt(term, result.prompt);
-  }, [onClose, writePrompt]);
+  }, [onClose, writePrompt, appendSessionLog]);
 
   // Setup real WebSocket connection
   const setupRealConnection = useCallback((term: XTerm) => {
@@ -191,61 +302,82 @@ export function Terminal({
       setConnected(true);
       setConnectionStatus('connected');
       setIsRealMode(true);
-      term.writeln(`\x1b[1;32mConnected to ${message.node || nodeName} (${message.console_type})\x1b[0m`);
+      const msg = `\x1b[1;32mConnected to ${message.node || nodeName} (${message.console_type})\x1b[0m`;
+      term.writeln(msg);
+      appendSessionLog(msg);
       term.writeln('');
     };
 
     ws.onDisconnect = () => {
       setConnected(false);
       setConnectionStatus('disconnected');
-      term.writeln('\r\n\x1b[1;31mConnection lost. Attempting to reconnect...\x1b[0m');
+      const msg = '\r\n\x1b[1;31mConnection lost. Attempting to reconnect...\x1b[0m';
+      term.write(msg);
+      appendSessionLog(msg);
     };
 
     ws.onError = (error) => {
       setConnectionStatus('error');
-      term.writeln(`\r\n\x1b[1;31mConnection error: ${error}\x1b[0m`);
+      const msg = `\r\n\x1b[1;31mConnection error: ${error}\x1b[0m`;
+      term.write(msg);
+      appendSessionLog(msg);
     };
 
     ws.connect(labPath, nodeId, term);
     return true;
-  }, [labPath, nodeId, nodeName]);
+  }, [labPath, nodeId, nodeName, appendSessionLog]);
 
   useEffect(() => {
     if (!terminalRef.current) return;
 
+    const fontFamily = FONT_FAMILIES[settings.terminalFontFamily] || FONT_FAMILIES.jetbrains;
+
     const term = new XTerm({
       cursorBlink: true,
       fontSize: settings.terminalFontSize,
-      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+      fontFamily,
       theme: themes[settings.terminalTheme],
       scrollback: 10000,
     });
 
     const fitAddon = new FitAddon();
+    const searchAddon = new SearchAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
+    term.loadAddon(searchAddon);
+
+    // Try WebGL addon for performance, fall back gracefully
+    try {
+      term.loadAddon(new WebglAddon());
+    } catch (e) {
+      // WebGL not available — canvas renderer fallback is fine
+    }
 
     term.open(terminalRef.current);
     fitAddon.fit();
 
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
+    searchAddonRef.current = searchAddon;
 
     // Welcome message
     term.writeln('\x1b[1;36m╔══════════════════════════════════════════════╗\x1b[0m');
     term.writeln('\x1b[1;36m║           NetOps Tower Terminal              ║\x1b[0m');
     term.writeln('\x1b[1;36m╚══════════════════════════════════════════════╝\x1b[0m');
     term.writeln('');
-    term.writeln(`\x1b[1;32mConnecting to ${nodeName}...\x1b[0m`);
+    const connectMsg = `\x1b[1;32mConnecting to ${nodeName}...\x1b[0m`;
+    term.writeln(connectMsg);
+    appendSessionLog(`Connecting to ${nodeName}...`);
 
     // Try real connection if enabled
     if (useRealConnection && labPath && nodeId !== undefined) {
       const realConnected = setupRealConnection(term);
       if (!realConnected) {
-        // Fall back to demo mode
         term.writeln('\x1b[1;33mFalling back to demo mode...\x1b[0m');
         setTimeout(() => {
-          term.writeln('\x1b[1;32mConnected (Demo Mode)\x1b[0m');
+          const msg = '\x1b[1;32mConnected (Demo Mode)\x1b[0m';
+          term.writeln(msg);
+          appendSessionLog('Connected (Demo Mode)');
           term.writeln('');
           term.writeln('\x1b[1;37mType "help" for available commands\x1b[0m');
           writePrompt(term, cliRef.current.getPrompt());
@@ -256,7 +388,9 @@ export function Terminal({
     } else {
       // Demo mode
       setTimeout(() => {
-        term.writeln('\x1b[1;32mConnected (Demo Mode)\x1b[0m');
+        const msg = '\x1b[1;32mConnected (Demo Mode)\x1b[0m';
+        term.writeln(msg);
+        appendSessionLog('Connected (Demo Mode)');
         term.writeln('');
         term.writeln('\x1b[1;37mType "help" for available commands\x1b[0m');
         writePrompt(term, cliRef.current.getPrompt());
@@ -265,8 +399,7 @@ export function Terminal({
       }, 800);
     }
 
-    // Handle input
-    let currentInput = '';
+    // Handle input with history navigation and tab autocomplete
     term.onData((data) => {
       // If connected to real backend, send data directly
       if (realModeRef.current && wsRef.current?.isConnected) {
@@ -280,48 +413,115 @@ export function Terminal({
       const code = data.charCodeAt(0);
 
       if (code === 13) { // Enter
-        processCommand(term, currentInput);
-        currentInput = '';
-      } else if (code === 9) { // Tab
-        if (cliRef.current.autocomplete) {
-          const completions = cliRef.current.autocomplete(currentInput);
-          if (completions.length === 1) {
-            // Auto-fill single completion
-            const trimmed = currentInput.trimEnd();
-            const tokens = trimmed.length === 0 ? [] : trimmed.split(/\s+/);
-            const trailingSpace = /\s$/.test(currentInput);
-            const lastPartial = trailingSpace ? '' : (tokens[tokens.length - 1] ?? '');
-            const suffix = completions[0].slice(lastPartial.length);
-            currentInput += suffix;
-            term.write(suffix);
-            // If we were completing a token (no trailing space), add a space for the next arg
-            if (!trailingSpace && tokens.length > 0) {
-              currentInput += ' ';
-              term.write(' ');
-            }
-          } else if (completions.length > 1) {
-            // Show completions list
-            term.write('\r\n' + completions.join('  ') + '\r\n');
-            writePrompt(term, cliRef.current.getPrompt());
-            term.write(currentInput);
+        processCommand(term, currentInputRef.current);
+        currentInputRef.current = '';
+      } else if (code === 9) { // Tab — autocomplete
+        const completions = cliRef.current.autocomplete?.(currentInputRef.current);
+        if (completions && completions.length === 1) {
+          // Single completion: replace the last word
+          const trimmed = currentInputRef.current.trimEnd();
+          const tokens = trimmed.length === 0 ? [] : trimmed.split(/\s+/);
+          const trailingSpace = /\s$/.test(currentInputRef.current);
+          const lastPartial = trailingSpace ? '' : (tokens[tokens.length - 1] ?? '');
+          const suffix = completions[0].slice(lastPartial.length);
+          currentInputRef.current += suffix;
+          term.write(suffix);
+          if (!trailingSpace && tokens.length > 0) {
+            currentInputRef.current += ' ';
+            term.write(' ');
           }
-          // 0 completions: silent (no beep)
+        } else if (completions && completions.length > 1) {
+          term.write('\r\n' + completions.join('  ') + '\r\n');
+          writePrompt(term, cliRef.current.getPrompt());
+          term.write(currentInputRef.current);
         }
       } else if (code === 127) { // Backspace
-        if (currentInput.length > 0) {
-          currentInput = currentInput.slice(0, -1);
+        if (currentInputRef.current.length > 0) {
+          currentInputRef.current = currentInputRef.current.slice(0, -1);
           term.write('\b \b');
         }
+      } else if (code === 27) { // ESC — handled via attachCustomKeyEventHandler for arrow sequences
       } else if (code >= 32) { // Printable characters
-        currentInput += data;
+        currentInputRef.current += data;
         term.write(data);
+      }
+    });
+
+    // Custom key handler for arrow keys (up/down history) and Ctrl+F (search)
+    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      // Ctrl+F — toggle search
+      if (e.ctrlKey && e.key === 'f') {
+        e.preventDefault();
+        setSearchVisible((prev) => !prev);
+        return false;
+      }
+
+      // Up arrow — history
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const history = historyRef.current;
+        if (history.length === 0) return false;
+        if (historyIndexRef.current === -1) {
+          historyIndexRef.current = history.length - 1;
+        } else if (historyIndexRef.current > 0) {
+          historyIndexRef.current--;
+        }
+        const entry = history[historyIndexRef.current];
+        const currentLine = currentInputRef.current;
+        if (currentLine.length > 0) {
+          term.write('\b \b'.repeat(currentLine.length));
+        }
+        term.write(entry);
+        currentInputRef.current = entry;
+        return false;
+      }
+
+      // Down arrow — history
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const history = historyRef.current;
+        if (historyIndexRef.current === -1) return false;
+        if (historyIndexRef.current < history.length - 1) {
+          historyIndexRef.current++;
+        } else {
+          historyIndexRef.current = -1;
+        }
+        const entry = historyIndexRef.current >= 0 ? history[historyIndexRef.current] : '';
+        const currentLine = currentInputRef.current;
+        if (currentLine.length > 0) {
+          term.write('\b \b'.repeat(currentLine.length));
+        }
+        term.write(entry);
+        currentInputRef.current = entry;
+        return false;
+      }
+
+      return true;
+    });
+
+    // Handle paste sanitization
+    term.textarea?.addEventListener('paste', (e: ClipboardEvent) => {
+      const clipboardData = e.clipboardData?.getData('text/plain');
+      if (!clipboardData) return;
+
+      e.preventDefault();
+      const sanitized = sanitizePaste(clipboardData);
+      if (sanitized.length === 0) return;
+
+      const lines = sanitized.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (i > 0) {
+          processCommand(term, currentInputRef.current);
+          currentInputRef.current = '';
+        }
+        currentInputRef.current += lines[i];
+        term.write(lines[i]);
       }
     });
 
     // Handle resize
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
-      // Send resize to WebSocket if connected
       if (wsRef.current?.isConnected) {
         wsRef.current.resize(term.cols, term.rows);
       }
@@ -333,7 +533,14 @@ export function Terminal({
       wsRef.current?.disconnect();
       term.dispose();
     };
-  }, [nodeName, nodeId, labPath, useRealConnection, settings.terminalFontSize, settings.terminalTheme, processCommand, writePrompt, setupRealConnection]);
+  }, [nodeName, nodeId, labPath, useRealConnection, settings.terminalFontSize, settings.terminalTheme, settings.terminalFontFamily, processCommand, writePrompt, setupRealConnection, appendSessionLog]);
+
+  // Focus search input when search becomes visible
+  useEffect(() => {
+    if (searchVisible && searchBarRef.current) {
+      searchBarRef.current.focus();
+    }
+  }, [searchVisible]);
 
   // Toggle xterm stdin when paused
   useEffect(() => {
@@ -347,6 +554,32 @@ export function Terminal({
       writePrompt(term, cliRef.current.getPrompt());
     }
   }, [isPaused, writePrompt]);
+
+  // Handle search from overlay bar
+  const handleSearch = useCallback((direction: 'next' | 'prev') => {
+    const searchAddon = searchAddonRef.current;
+    const input = searchBarRef.current;
+    if (!searchAddon || !input) return;
+
+    const query = input.value.trim();
+    if (!query) return;
+
+    if (direction === 'next') {
+      searchAddon.findNext(query);
+    } else {
+      searchAddon.findPrevious(query);
+    }
+  }, []);
+
+  // Live search as user types
+  const handleSearchInput = useCallback((value: string) => {
+    const searchAddon = searchAddonRef.current;
+    if (!searchAddon) return;
+
+    if (value.trim()) {
+      searchAddon.findNext(value.trim());
+    }
+  }, []);
 
   const getStatusColor = () => {
     switch (connectionStatus) {
@@ -378,6 +611,20 @@ export function Terminal({
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setSearchVisible((v) => !v)}
+            className="px-2 py-1 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded"
+            title="Search (Ctrl+F)"
+          >
+            🔍
+          </button>
+          <button
+            onClick={downloadSessionLog}
+            className="px-2 py-1 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded"
+            title="Download session log"
+          >
+            📥 Log
+          </button>
+          <button
             onClick={() => xtermRef.current?.clear()}
             className="px-2 py-1 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded"
             title="Clear terminal"
@@ -398,6 +645,47 @@ export function Terminal({
           )}
         </div>
       </div>
+
+      {/* Search bar overlay */}
+      {searchVisible && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-black/60 border-b border-cyan-500/20">
+          <input
+            ref={searchBarRef}
+            type="text"
+            placeholder="Search terminal..."
+            className="flex-1 bg-black/40 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:border-cyan-500 focus:outline-none"
+            onChange={(e) => handleSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleSearch(e.shiftKey ? 'prev' : 'next');
+              } else if (e.key === 'Escape') {
+                setSearchVisible(false);
+              }
+            }}
+          />
+          <button
+            onClick={() => handleSearch('prev')}
+            className="px-2 py-1 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded"
+            title="Previous match"
+          >
+            ▲
+          </button>
+          <button
+            onClick={() => handleSearch('next')}
+            className="px-2 py-1 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded"
+            title="Next match"
+          >
+            ▼
+          </button>
+          <button
+            onClick={() => setSearchVisible(false)}
+            className="px-2 py-1 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded"
+            title="Close search"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Terminal content */}
       <div ref={terminalRef} className="flex-1 p-2" />

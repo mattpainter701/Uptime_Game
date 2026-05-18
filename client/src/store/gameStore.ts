@@ -603,6 +603,7 @@ export const useGameStore = create<GameState>()(
         sfxVolume: 0.7,
         terminalTheme: 'cyberpunk',
         terminalFontSize: 14,
+        terminalFontFamily: 'jetbrains',
         colorblindMode: 'none',
         reducedMotion: false,
         largeText: false,
