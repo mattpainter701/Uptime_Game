@@ -276,67 +276,6 @@ export const validationApi = {
 };
 
 // ============================================================================
-// Analytics API
-// ============================================================================
-
-export interface AnalyticsReportRequest {
-  playerId: string;
-  records: Array<{
-    id: string;
-    ticketId: string;
-    ticketTitle: string;
-    category: string;
-    difficulty: number;
-    outcome: string;
-    timestamp: number;
-    timeSpentMs: number;
-    score: number;
-    creditsEarned: number;
-    xpEarned: number;
-    uptimeBonus: number;
-    hintsUsed: number;
-    hintCostTotal: number;
-  }>;
-  snapshot?: Record<string, unknown>;
-}
-
-export interface AggregateAnalyticsResponse {
-  totalPlayers: number;
-  totalTickets: number;
-  tiers: Array<{
-    difficulty: number;
-    attempts: number;
-    wins: number;
-    losses: number;
-    winRate: number;
-    avgTimeMs: number;
-    avgScore: number;
-  }>;
-  categories: Array<{
-    category: string;
-    attempts: number;
-    wins: number;
-    losses: number;
-    winRate: number;
-  }>;
-  overallWinRate: number;
-}
-
-export const analyticsApi = {
-  report: (data: AnalyticsReportRequest) =>
-    request<{ received: boolean }>('/analytics/report', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
-  getDifficulty: () =>
-    request<AggregateAnalyticsResponse>('/analytics/difficulty'),
-
-  getCategories: () =>
-    request<AggregateAnalyticsResponse['categories']>('/analytics/categories'),
-};
-
-// ============================================================================
 // Export all APIs
 // ============================================================================
 
@@ -346,7 +285,6 @@ export const api = {
   nodes: nodesApi,
   uptime: uptimeApi,
   validation: validationApi,
-  analytics: analyticsApi,
 };
 
 export default api;
