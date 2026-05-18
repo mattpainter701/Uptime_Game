@@ -415,6 +415,10 @@ export const useGameStore = create<GameState>()(
         sfxVolume: 0.7,
         terminalTheme: 'cyberpunk',
         terminalFontSize: 14,
+        colorblindMode: 'none',
+        reducedMotion: false,
+        largeText: false,
+        highContrast: false,
       },
 
       gameConfig: null,

@@ -149,3 +149,173 @@ html, body, #root {
 .xterm-viewport {
   overflow-y: auto !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Colorblind modes
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Colorblind mode: apply SVG feColorMatrix filter via data attributes */
+[data-colorblind-mode="protanopia"],
+[data-colorblind-mode="deuteranopia"],
+[data-colorblind-mode="tritanopia"] {
+  /* The filter is applied via a hidden SVG element injected by App.tsx */
+}
+
+/* Secondary non-color cues alongside colored status */
+.cb-protanopia .status-pass::after,
+.cb-deuteranopia .status-pass::after {
+  content: " ✓";
+}
+.cb-protanopia .status-fail::after,
+.cb-deuteranopia .status-fail::after {
+  content: " ✗";
+}
+
+/* Diagonal stripe pattern for pass/fail under colorblind modes */
+.cb-protanopia .status-pass,
+.cb-deuteranopia .status-pass {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 3px,
+    rgba(255, 255, 255, 0.08) 3px,
+    rgba(255, 255, 255, 0.08) 6px
+  );
+}
+.cb-protanopia .status-fail,
+.cb-deuteranopia .status-fail {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 3px,
+    rgba(255, 255, 255, 0.08) 3px,
+    rgba(255, 255, 255, 0.08) 6px
+  );
+}
+
+/* Left border indicator for pass/fail — works in all colorblind modes */
+.cb-protanopia .border-pass,
+.cb-deuteranopia .border-pass,
+.cb-tritanopia .border-pass {
+  border-left: 3px solid #fff !important;
+}
+.cb-protanopia .border-fail,
+.cb-deuteranopia .border-fail,
+.cb-tritanopia .border-fail {
+  border-left: 3px double #fff !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Reduced motion
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+
+/* Respect OS-level prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  /* But scope the 0s instant to our explicit class — the 0.001ms above
+     is for screen readers to still detect the elements */
+  .reduce-motion *,
+  .reduce-motion *::before,
+  .reduce-motion *::after {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Large text mode
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.large-text {
+  font-size: 1.5em !important;
+}
+.large-text button,
+.large-text [role="button"] {
+  min-height: 48px;
+  min-width: 48px;
+}
+.large-text input,
+.large-text select,
+.large-text textarea {
+  min-height: 44px;
+}
+.large-text .space-y-1 > * + * {
+  margin-top: 0.5rem;
+}
+.large-text .space-y-2 > * + * {
+  margin-top: 0.75rem;
+}
+.large-text .space-y-3 > * + * {
+  margin-top: 1rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — High contrast mode
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.high-contrast {
+  --text-primary: #ffffff;
+  --text-secondary: #e0e0e0;
+  --bg-primary: #000000;
+  --bg-secondary: #111111;
+  --border-color: #ffffff;
+  --accent: #00ffff;
+}
+.high-contrast .glass-panel {
+  background: rgba(0, 0, 0, 0.95) !important;
+  border-color: rgba(255, 255, 255, 0.5) !important;
+}
+.high-contrast .text-gray-400,
+.high-contrast .text-gray-500,
+.high-contrast .text-gray-600 {
+  color: #e0e0e0 !important;
+}
+.high-contrast .border-gray-600,
+.high-contrast .border-gray-700,
+.high-contrast .border-gray-800 {
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+.high-contrast .bg-white\/5,
+.high-contrast .bg-white\/10,
+.high-contrast .bg-white\/20 {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+.high-contrast .bg-black\/30,
+.high-contrast .bg-black\/60 {
+  background: rgba(0, 0, 0, 0.95) !important;
+}
+.high-contrast button {
+  outline: 1px solid rgba(255, 255, 255, 0.4);
+}
+.high-contrast button:focus-visible {
+  outline: 2px solid #00ffff;
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Focus visible enhancement (global)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:focus-visible {
+  outline: 2px solid #00ffff;
+  outline-offset: 2px;
+}
+/* Remove focus outline for mouse users */
+:focus:not(:focus-visible) {
+  outline: none;
+}

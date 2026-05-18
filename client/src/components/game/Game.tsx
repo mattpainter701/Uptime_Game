@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { GameCanvas } from '../scene/GameCanvas';
 import { HUD } from '../ui/HUD';
@@ -9,6 +9,7 @@ import { TicketResultScreen } from '../ui/TicketResultScreen';
 import { SessionSummaryScreen } from '../ui/SessionSummaryScreen';
 import { TutorialOverlay } from '../ui/TutorialOverlay';
 import { SandboxLabBrowser } from '../ui/SandboxLabBrowser';
+import { ShortcutReference } from '../ui/ShortcutReference';
 import { FLOORS } from '../scene/Building';
 
 function OfficeView() {
@@ -155,6 +156,97 @@ function SettingsPanel() {
                   className="w-full accent-cyan-500"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Accessibility settings */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-400 mb-3">ACCESSIBILITY</h3>
+            <div className="space-y-4">
+              {/* Colorblind mode */}
+              <div>
+                <label className="block text-white mb-2">Colorblind Mode</label>
+                <div className="flex gap-2 flex-wrap">
+                  {(['none', 'protanopia', 'deuteranopia', 'tritanopia'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => updateSettings({ colorblindMode: mode })}
+                      className={`px-3 py-2 rounded capitalize text-sm ${
+                        settings.colorblindMode === mode
+                          ? 'bg-cyan-500/30 border border-cyan-500 text-cyan-400'
+                          : 'bg-white/5 border border-gray-600 text-gray-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {mode === 'none' ? 'Off' : mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reduced motion toggle */}
+              <label className="flex items-center justify-between">
+                <span className="text-white">Reduced Motion</span>
+                <button
+                  onClick={() => updateSettings({ reducedMotion: !settings.reducedMotion })}
+                  className={`w-12 h-6 rounded-full transition-all relative ${
+                    settings.reducedMotion ? 'bg-cyan-500' : 'bg-gray-600'
+                  }`}
+                  role="switch"
+                  aria-checked={settings.reducedMotion}
+                  aria-label="Reduced motion"
+                >
+                  <span
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${
+                      settings.reducedMotion ? 'left-6' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+              </label>
+
+              {/* Large text toggle */}
+              <label className="flex items-center justify-between">
+                <span className="text-white">Large Text</span>
+                <button
+                  onClick={() => updateSettings({ largeText: !settings.largeText })}
+                  className={`w-12 h-6 rounded-full transition-all relative ${
+                    settings.largeText ? 'bg-cyan-500' : 'bg-gray-600'
+                  }`}
+                  role="switch"
+                  aria-checked={settings.largeText}
+                  aria-label="Large text"
+                >
+                  <span
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${
+                      settings.largeText ? 'left-6' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+              </label>
+
+              {/* High contrast toggle */}
+              <label className="flex items-center justify-between">
+                <span className="text-white">High Contrast</span>
+                <button
+                  onClick={() => updateSettings({ highContrast: !settings.highContrast })}
+                  className={`w-12 h-6 rounded-full transition-all relative ${
+                    settings.highContrast ? 'bg-cyan-500' : 'bg-gray-600'
+                  }`}
+                  role="switch"
+                  aria-checked={settings.highContrast}
+                  aria-label="High contrast"
+                >
+                  <span
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${
+                      settings.highContrast ? 'left-6' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+              </label>
+
+              {/* Keyboard shortcuts tip */}
+              <p className="text-xs text-gray-500">
+                Press <kbd className="px-1.5 py-0.5 bg-white/10 border border-gray-600 rounded text-cyan-400 font-mono">?</kbd> anytime to view keyboard shortcuts
+              </p>
             </div>
           </div>
 
@@ -365,24 +457,99 @@ export function Game() {
   const pauseGame = useGameStore((state) => state.pauseGame);
   const resumeGame = useGameStore((state) => state.resumeGame);
 
-  // Escape key handler — toggles pause when in-game (terminal/office views with active ticket)
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      // Don't toggle pause in menus (settings, shop, tickets, result screens)
-      const menuViews: string[] = ['settings', 'shop', 'tickets', 'ticketResult', 'sessionSummary', 'sandboxLabBrowser'];
-      const isInMenu = menuViews.includes(useGameStore.getState().currentView);
-      // Also don't toggle pause in sandbox mode (no time pressure)
-      if (isInMenu || useGameStore.getState().sandboxState.active) return;
+  // Shortcut reference overlay state
+  const [shortcutRefOpen, setShortcutRefOpen] = useState(false);
+  const toggleShortcutRef = useCallback(() => setShortcutRefOpen((v) => !v), []);
 
-      // Toggle pause
-      const { sessionState, pauseGame, resumeGame } = useGameStore.getState();
-      if (sessionState.isPaused) {
-        resumeGame();
-      } else {
-        pauseGame();
+  // Keyboard handler — full accessibility keyboard navigation
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      const store = useGameStore.getState();
+      const { currentView, setView, activeTicket, validateTicket, sandboxState, sessionState, pauseGame, resumeGame } = store;
+
+      // Ignore if user is typing in an input/textarea
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable;
+
+      // Show shortcut reference (? or F1) — always works
+      if ((e.key === '?' || e.key === 'F1') && !isInput) {
+        e.preventDefault();
+        toggleShortcutRef();
+        return;
       }
-    }
-  }, []);
+
+      // Escape: close panels / go back / toggle pause
+      if (e.key === 'Escape') {
+        const menuViews: string[] = ['settings', 'shop', 'tickets', 'ticketResult', 'sessionSummary', 'sandboxLabBrowser'];
+        if (menuViews.includes(currentView)) {
+          e.preventDefault();
+          setView('office');
+          return;
+        }
+        // In sandbox, Escape goes to office
+        if (sandboxState.active) {
+          e.preventDefault();
+          setView('office');
+          return;
+        }
+        // In terminal or office with active ticket: toggle pause
+        if (activeTicket && !sandboxState.active) {
+          e.preventDefault();
+          if (sessionState.isPaused) {
+            resumeGame();
+          } else {
+            pauseGame();
+          }
+          return;
+        }
+        return;
+      }
+
+      // Don't process other shortcuts when in input
+      if (isInput) return;
+
+      // Single-key navigation shortcuts
+      switch (e.key.toUpperCase()) {
+        case 'T':
+          e.preventDefault();
+          setView('tickets');
+          break;
+        case 'E':
+          e.preventDefault();
+          setView('terminal');
+          break;
+        case 'V':
+          e.preventDefault();
+          // In terminal view, the terminal handles validation via CLI.
+          // V shortcut navigates to terminal so user can run validate commands.
+          if (currentView !== 'terminal') {
+            setView('terminal');
+          }
+          break;
+        case 'B':
+          e.preventDefault();
+          setView('shop');
+          break;
+        case 'S':
+          e.preventDefault();
+          setView('settings');
+          break;
+        case 'O':
+          e.preventDefault();
+          setView('office');
+          break;
+        case 'P':
+          e.preventDefault();
+          if (sessionState.isPaused) {
+            resumeGame();
+          } else {
+            pauseGame();
+          }
+          break;
+      }
+    },
+    [toggleShortcutRef],
+  );
 
   // Auto-pause on tab blur (visibilitychange)
   useEffect(() => {
@@ -436,6 +603,9 @@ export function Game() {
 
       {/* Tutorial overlay — on top of everything when tutorial is active */}
       <TutorialOverlay />
+
+      {/* Keyboard shortcut reference overlay */}
+      <ShortcutReference isOpen={shortcutRefOpen} onClose={() => setShortcutRefOpen(false)} />
     </div>
   );
 }

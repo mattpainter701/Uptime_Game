@@ -39,8 +39,15 @@ function TicketCard({ ticket, onAccept }: { ticket: Ticket; onAccept: () => void
   const canAccept = requiredItems.length === 0 || hasRequiredItems(requiredItems);
 
   return (
-    <div className="glass-panel p-4 hover:border-cyan-500/50 transition-all cursor-pointer">
-      <div onClick={() => setExpanded(!expanded)}>
+    <div className="glass-panel p-4 hover:border-cyan-500/50 transition-all cursor-pointer" role="article" aria-label={`Ticket: ${ticket.title}`}>
+      <div
+        onClick={() => setExpanded(!expanded)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        aria-label={`${ticket.title} — ${category.label}, difficulty ${ticket.difficulty}/5. ${expanded ? 'Click to collapse' : 'Click to expand'}`}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded); } }}
+      >
         {/* Header */}
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -170,15 +177,15 @@ export function TicketPanel() {
     : availableTickets.filter(t => t.category === filter);
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/60 backdrop-blur-sm">
+    <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Ticket queue panel">
       <div className="w-full max-w-4xl max-h-[80vh] m-4 glass-panel flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           <div className="flex items-center gap-3">
-            <span className="text-3xl">📋</span>
+            <span className="text-3xl" aria-hidden="true">📋</span>
             <div>
               <h2 className="text-xl font-bold text-white">Ticket Queue</h2>
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-gray-400" aria-live="polite">
                 {availableTickets.length} tickets available
               </p>
             </div>
@@ -186,15 +193,18 @@ export function TicketPanel() {
           <button
             onClick={() => setView('office')}
             className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-xl"
+            aria-label="Close ticket panel"
           >
             ✕
           </button>
         </div>
 
         {/* Filter tabs */}
-        <div className="flex gap-2 p-4 border-b border-gray-700 overflow-x-auto">
+        <div className="flex gap-2 p-4 border-b border-gray-700 overflow-x-auto" role="tablist" aria-label="Ticket category filters">
           <button
             onClick={() => setFilter('all')}
+            role="tab"
+            aria-selected={filter === 'all'}
             className={`px-3 py-1.5 rounded text-sm whitespace-nowrap transition-all ${
               filter === 'all'
                 ? 'bg-cyan-500/30 text-cyan-400 border border-cyan-500'
@@ -207,22 +217,24 @@ export function TicketPanel() {
             <button
               key={key}
               onClick={() => setFilter(key as TicketCategory)}
+              role="tab"
+              aria-selected={filter === key}
               className={`px-3 py-1.5 rounded text-sm whitespace-nowrap transition-all flex items-center gap-1 ${
                 filter === key
                   ? 'bg-cyan-500/30 text-cyan-400 border border-cyan-500'
                   : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
               }`}
             >
-              <span>{info.icon}</span>
+              <span aria-hidden="true">{info.icon}</span>
               <span>{info.label}</span>
             </button>
           ))}
         </div>
 
         {/* Ticket list */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4" role="list" aria-label="Available tickets">
           {activeTicket ? (
-            <div className="text-center text-gray-400 py-8">
+            <div className="text-center text-gray-400 py-8" role="alert">
               <p className="text-lg mb-2">You already have an active ticket</p>
               <p className="text-sm">Complete or abandon your current ticket to accept a new one</p>
               <button

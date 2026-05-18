@@ -319,13 +319,14 @@ export function TerminalView() {
   };
 
   return (
-    <div className="absolute inset-0 flex z-20 bg-[#0a0a15]">
+    <div className="absolute inset-0 flex z-20 bg-[#0a0a15]" role="application" aria-label="Network terminal console">
       {/* Left panel - Topology & Nodes */}
-      <div className="w-64 flex flex-col border-r border-gray-800 bg-[#0d0d1a]">
+      <div className="w-64 flex flex-col border-r border-gray-800 bg-[#0d0d1a]" role="navigation" aria-label="Device panel">
         <div className="p-4 border-b border-gray-800">
           <button
             onClick={handleBack}
             disabled={isPaused && !isSandbox}
+            aria-label={isSandbox ? 'Back to sandbox browser' : 'Back to office view'}
             className={`flex items-center gap-2 transition-colors ${
               (isPaused && !isSandbox) ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white'
             }`}
@@ -354,7 +355,7 @@ export function TerminalView() {
       </div>
 
       {/* Center - Terminal */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col" role="main" aria-label="Terminal console">
         {/* Sandbox toolbar */}
         {isSandbox && <SandboxToolbar />}
 
@@ -409,7 +410,7 @@ export function TerminalView() {
       </div>
 
       {/* Right panel - Ticket details */}
-      <div className="w-80 flex flex-col border-l border-gray-800 bg-[#0d0d1a]">
+      <div className="w-80 flex flex-col border-l border-gray-800 bg-[#0d0d1a]" role="complementary" aria-label="Ticket details panel">
         <div className="p-4 border-b border-gray-800">
           <h3 className="font-bold text-white flex items-center gap-2">
             <span>📋</span>
