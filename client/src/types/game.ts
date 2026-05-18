@@ -142,11 +142,18 @@ export type GameView = 'office' | 'terminal' | 'tickets' | 'shop' | 'settings' |
 
 export type TimeOfDay = number; // 0-24
 
+export type ColorblindMode = 'none' | 'protanopia' | 'deuteranopia' | 'tritanopia';
+
 export interface GameSettings {
   musicVolume: number;
   sfxVolume: number;
   terminalTheme: 'dark' | 'light' | 'cyberpunk';
   terminalFontSize: number;
+  // Accessibility
+  colorblindMode: ColorblindMode;
+  reducedMotion: boolean;
+  largeText: boolean;
+  highContrast: boolean;
 }
 
 // Uptime tracking types

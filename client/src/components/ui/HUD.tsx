@@ -56,11 +56,11 @@ export function HUD() {
   const { player, activeTicket, currentView, setView, uptime, failTicket, playerPosition, currentFloor, sandboxState, enterSandbox } = useGameStore();
 
   return (
-    <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none">
+    <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none" role="banner" aria-label="Heads-up display">
       {/* Top bar */}
       <div className="flex items-center justify-between p-4 pointer-events-auto">
         {/* Player info */}
-        <div className="glass-panel px-4 py-2 flex items-center gap-4">
+        <div className="glass-panel px-4 py-2 flex items-center gap-4" role="region" aria-label="Player information">
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center font-bold text-lg">
               {player.name.charAt(0)}
@@ -85,7 +85,7 @@ export function HUD() {
         </div>
 
         {/* Stats - Cash, Uptime, Reputation */}
-        <div className="glass-panel px-4 py-2 flex items-center gap-4">
+        <div className="glass-panel px-4 py-2 flex items-center gap-4" role="region" aria-label="Player stats" aria-live="polite">
           {/* Cash */}
           <div className="flex items-center gap-2">
             <span className="text-xl">💵</span>
@@ -161,7 +161,7 @@ export function HUD() {
         </div>
 
         {/* Navigation */}
-        <div className="glass-panel px-2 py-2 flex items-center gap-1">
+        <div className="glass-panel px-2 py-2 flex items-center gap-1" role="navigation" aria-label="Main navigation">
           {[
             { id: 'office', icon: '🏢', label: 'Office' },
             { id: 'tickets', icon: '📋', label: 'Tickets' },
@@ -187,6 +187,8 @@ export function HUD() {
                   : 'hover:bg-white/10 text-gray-400 hover:text-white'
               }`}
               title={nav.label}
+              aria-label={`${nav.label}${currentView === nav.id ? ' (current)' : ''}`}
+              aria-current={currentView === nav.id ? 'page' : undefined}
             >
               <span className="text-lg">{nav.icon}</span>
             </button>
@@ -196,10 +198,10 @@ export function HUD() {
 
       {/* Active ticket bar */}
       {activeTicket && (
-        <div className="mx-4 glass-panel px-4 py-3 pointer-events-auto">
+        <div className="mx-4 glass-panel px-4 py-3 pointer-events-auto" role="region" aria-label="Active ticket" aria-live="polite">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <span className="text-2xl">📋</span>
+              <span className="text-2xl" aria-hidden="true">📋</span>
               <div>
                 <div className="font-bold text-white">{activeTicket.title}</div>
                 <div className="text-sm text-gray-400 flex items-center gap-3">
@@ -239,6 +241,7 @@ export function HUD() {
               <button
                 onClick={() => setView('terminal')}
                 className="px-4 py-2 bg-cyan-500/30 border border-cyan-500 rounded text-cyan-400 hover:bg-cyan-500/50 transition-all"
+                aria-label={`Open terminal for ${activeTicket.title}`}
               >
                 Open Terminal
               </button>
@@ -246,6 +249,7 @@ export function HUD() {
               <button
                 onClick={failTicket}
                 className="px-4 py-2 bg-red-500/20 border border-red-500/50 rounded text-red-400 hover:bg-red-500/30 transition-all"
+                aria-label={`Abandon ticket ${activeTicket.title}`}
               >
                 Abandon
               </button>

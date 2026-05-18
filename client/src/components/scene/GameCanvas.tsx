@@ -18,14 +18,17 @@ function LoadingFallback() {
 
 function Scene() {
   const timeOfDay = useGameStore((state) => state.timeOfDay);
+  const reducedMotion = useGameStore((state) => state.settings.reducedMotion);
+  const prefersReduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const noMotion = reducedMotion || prefersReduced;
   const isNight = timeOfDay < 6 || timeOfDay > 18;
 
   return (
     <>
       <Lighting />
 
-      {/* Stars visible at night */}
-      {isNight && (
+      {/* Stars visible at night — disabled when reduced motion */}
+      {isNight && !noMotion && (
         <Stars
           radius={100}
           depth={50}
@@ -42,16 +45,18 @@ function Scene() {
         <Building />
       </Suspense>
 
-      {/* Post-processing effects */}
-      <EffectComposer>
-        <Bloom
-          intensity={0.4}
-          luminanceThreshold={0.8}
-          luminanceSmoothing={0.9}
-          height={300}
-        />
-        <Vignette eskil={false} offset={0.1} darkness={0.4} />
-      </EffectComposer>
+      {/* Post-processing effects — disabled when reduced motion */}
+      {!noMotion && (
+        <EffectComposer>
+          <Bloom
+            intensity={0.4}
+            luminanceThreshold={0.8}
+            luminanceSmoothing={0.9}
+            height={300}
+          />
+          <Vignette eskil={false} offset={0.1} darkness={0.4} />
+        </EffectComposer>
+      )}
     </>
   );
 }
@@ -59,6 +64,7 @@ function Scene() {
 function CameraController() {
   const controlsRef = useRef<OrbitControlsType>(null);
   const playerPosition = useGameStore((state) => state.playerPosition);
+  const reducedMotion = useGameStore((state) => state.settings.reducedMotion);
 
   // Disable orbit controls when player is standing (camera follows player)
   useEffect(() => {
@@ -70,8 +76,8 @@ function CameraController() {
   return (
     <OrbitControls
       ref={controlsRef}
-      enableDamping
-      dampingFactor={0.05}
+      enableDamping={!reducedMotion}
+      dampingFactor={reducedMotion ? 1 : 0.05}
       minDistance={2}
       maxDistance={12}
       maxPolarAngle={Math.PI / 2.1}
