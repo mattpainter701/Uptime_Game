@@ -1,19 +1,14 @@
-/**
- * labImportStore.ts - Zustand store for EVE-NG lab import wizard
- */
 import { create } from 'zustand';
 
-export interface LabInfo {
-  name: string;
+export interface Lab {
   path: string;
-  author?: string;
-  description?: string;
-  version?: string;
+  name: string;
+  status: string;
+  [key: string]: unknown;
 }
 
 export interface NodeMapping {
   nodeId: string;
-  nodeName: string;
   role: 'router' | 'switch' | 'firewall' | 'unknown';
 }
 
@@ -22,25 +17,22 @@ interface LabImportState {
   serverUrl: string;
   username: string;
   password: string;
-  labs: LabInfo[];
-  selectedLab: LabInfo | null;
+  labs: Lab[];
+  selectedLab: Lab | null;
   nodeMappings: NodeMapping[];
-  loading: boolean;
-  error: string | null;
 
   setStep: (step: number) => void;
   setServerUrl: (url: string) => void;
   setUsername: (username: string) => void;
   setPassword: (password: string) => void;
-  setLabs: (labs: LabInfo[]) => void;
-  setSelectedLab: (lab: LabInfo | null) => void;
+  setLabs: (labs: Lab[]) => void;
+  setSelectedLab: (lab: Lab | null) => void;
   setNodeMappings: (mappings: NodeMapping[]) => void;
-  setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
-  reset: () => void;
+  addNodeMapping: (mapping: NodeMapping) => void;
+  resetStore: () => void;
 }
 
-const initialState = {
+export const useLabImportStore = create<LabImportState>((set) => ({
   step: 1,
   serverUrl: '',
   username: '',
@@ -48,12 +40,6 @@ const initialState = {
   labs: [],
   selectedLab: null,
   nodeMappings: [],
-  loading: false,
-  error: null,
-};
-
-export const useLabImportStore = create<LabImportState>((set) => ({
-  ...initialState,
 
   setStep: (step) => set({ step }),
   setServerUrl: (serverUrl) => set({ serverUrl }),
@@ -62,7 +48,21 @@ export const useLabImportStore = create<LabImportState>((set) => ({
   setLabs: (labs) => set({ labs }),
   setSelectedLab: (selectedLab) => set({ selectedLab }),
   setNodeMappings: (nodeMappings) => set({ nodeMappings }),
-  setLoading: (loading) => set({ loading }),
-  setError: (error) => set({ error }),
-  reset: () => set(initialState),
+  addNodeMapping: (mapping) =>
+    set((state) => ({
+      nodeMappings: [
+        ...state.nodeMappings.filter((m) => m.nodeId !== mapping.nodeId),
+        mapping,
+      ],
+    })),
+  resetStore: () =>
+    set({
+      step: 1,
+      serverUrl: '',
+      username: '',
+      password: '',
+      labs: [],
+      selectedLab: null,
+      nodeMappings: [],
+    }),
 }));
