@@ -1,0 +1,54 @@
+name: QA Docker Stack
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: qa-uptime-game-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start QA stack
+        run: docker compose -f docker-compose.qa.yml up -d --build
+
+      - name: Wait for backend health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/status/health >/dev/null; then
+              echo "backend healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "backend did not become healthy"
+          docker compose -f docker-compose.qa.yml logs --no-color
+          exit 1
+
+      - name: Smoke test frontend
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5173 >/tmp/qa-uptime_game.html; then
+              echo "frontend reachable"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "frontend did not become reachable"
+          docker compose -f docker-compose.qa.yml logs --no-color
+          exit 1
+
+      - name: Tear down QA stack
+        if: always()
+        run: docker compose -f docker-compose.qa.yml down -v --remove-orphans

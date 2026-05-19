@@ -1,0 +1,57 @@
+version: "3.8"
+
+# QA stack for GitHub Actions / Skynet smoke runs.
+# Primary interactive container: qa-uptime_game
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: qa-uptime_game-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - EVENG_HOST=127.0.0.1
+      - EVENG_USERNAME=qa
+      - EVENG_PASSWORD=qa
+      - EVENG_PROTOCOL=http
+      - EVENG_VERIFY_SSL=false
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+      - REDIS_URL=redis://redis:6379
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/status/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: qa-uptime_game
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://backend:8000/api
+      - VITE_WS_URL=ws://backend:8000/api
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    container_name: qa-uptime_game-redis
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  redis_data:
