@@ -1,251 +1,206 @@
-import React, { useEffect, useState } from 'react';
-import { useLabImportStore, type NodeMapping } from '../../store/labImportStore';
+import { useState, useEffect } from 'react';
+import { useLabImportStore } from '../../store/labImportStore';
 
-interface LabNode {
+interface NodeInfo {
   id: string;
   name: string;
+  type: string;
   status: string;
-  template?: string;
-  [key: string]: unknown;
 }
 
-const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({
-  children,
-  className,
-  ...props
-}) => (
-  <button
-    className={`px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 ${className || ''}`}
-    {...props}
-  >
-    {children}
-  </button>
-);
+const ROLES = ['router', 'switch', 'firewall', 'server', 'client'];
 
-export default function LabImportWizard() {
-  const {
-    step,
-    serverUrl,
-    username,
-    password,
-    labs,
-    selectedLab,
-    nodeMappings,
-    setStep,
-    setServerUrl,
-    setUsername,
-    setPassword,
-    setLabs,
-    setSelectedLab,
-    setNodeMappings,
-    addNodeMapping,
-    resetStore,
-  } = useLabImportStore();
+function StepCredentials() {
+  const { serverUrl, username, password, setCredentials, setStep, setLabs } =
+    useLabImportStore();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const [loadingLabs, setLoadingLabs] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [nodes, setNodes] = useState<LabNode[]>([]);
-  const [loadingNodes, setLoadingNodes] = useState(false);
-
-  const fetchLabs = async () => {
-    setLoadingLabs(true);
-    setError(null);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (!serverUrl || !username || !password) {
+      setError('All fields are required');
+      return;
+    }
+    setLoading(true);
     try {
-      const response = await fetch('/api/labs/import', {
+      const resp = await fetch('/api/labs/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ server_url: serverUrl, username, password }),
       });
-      if (!response.ok) throw new Error('Failed to fetch labs');
-      const data = await response.json();
-      if (data.success && data.labs) {
-        setLabs(data.labs);
-        setStep(2);
-      } else {
-        throw new Error('Invalid response from server');
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        throw new Error(data.detail || 'Failed to fetch labs');
       }
+      setLabs(data.labs || []);
+      setStep(2);
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      setError(err.message || 'Unknown error');
     } finally {
-      setLoadingLabs(false);
+      setLoading(false);
     }
   };
-
-  const fetchNodes = async (labPath: string) => {
-    setLoadingNodes(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/nodes/${encodeURIComponent(labPath)}/list`);
-      if (!response.ok) throw new Error('Failed to fetch nodes');
-      const data = await response.json();
-      setNodes(data.nodes || []);
-      // Initialize nodeMappings if empty
-      if (data.nodes && nodeMappings.length === 0) {
-        setNodeMappings(
-          data.nodes.map((node: LabNode) => ({
-            nodeId: node.id,
-            role: 'unknown' as const,
-          }))
-        );
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to load nodes');
-    } finally {
-      setLoadingNodes(false);
-    }
-  };
-
-  useEffect(() => {
-    if (step === 3 && selectedLab) {
-      fetchNodes(selectedLab.path);
-    }
-  }, [step, selectedLab]);
 
   return (
-    <div className="p-6 max-w-2xl mx-auto bg-gray-800 text-white rounded-lg shadow-xl">
-      <h2 className="text-2xl font-bold mb-4">Import Lab from EVE-NG</h2>
-
-      {/* Step indicator */}
-      <div className="flex mb-6">
-        {[1, 2, 3].map((s) => (
-          <div key={s} className="flex items-center">
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                s <= step ? 'bg-blue-500' : 'bg-gray-600'
-              }`}
-            >
-              {s}
-            </div>
-            {s < 3 && (
-              <div
-                className={`flex-1 h-1 mx-2 ${
-                  s < step ? 'bg-blue-500' : 'bg-gray-600'
-                }`}
-              />
-            )}
-          </div>
-        ))}
-      </div>
-
-      {error && (
-        <div className="mb-4 p-3 bg-red-600 rounded">{error}</div>
-      )}
-
-      {/* Step 1: Server URL and credentials */}
-      {step === 1 && (
-        <div>
-          <div className="mb-4">
-            <label className="block text-sm mb-1">EVE-NG Server URL</label>
-            <input
-              type="text"
-              className="w-full p-2 bg-gray-700 rounded border border-gray-600"
-              placeholder="https://eve-ng.example.com"
-              value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)}
-            />
-          </div>
-          <div className="mb-4">
-            <label className="block text-sm mb-1">Username</label>
-            <input
-              type="text"
-              className="w-full p-2 bg-gray-700 rounded border border-gray-600"
-              placeholder="admin"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-          </div>
-          <div className="mb-4">
-            <label className="block text-sm mb-1">Password</label>
-            <input
-              type="password"
-              className="w-full p-2 bg-gray-700 rounded border border-gray-600"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          <Button
-            onClick={fetchLabs}
-            disabled={loadingLabs || !serverUrl || !username || !password}
-          >
-            {loadingLabs ? 'Fetching...' : 'Next: Select Lab'}
-          </Button>
-        </div>
-      )}
-
-      {/* Step 2: Lab selection */}
-      {step === 2 && (
-        <div>
-          <div className="mb-4">
-            <h3 className="text-lg font-semibold mb-2">Select a Lab</h3>
-            {labs.length === 0 && <p>No labs found.</p>}
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {labs.map((lab) => (
-                <div
-                  key={lab.path}
-                  className={`p-3 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 ${
-                    selectedLab?.path === lab.path ? 'border-2 border-blue-500' : ''
-                  }`}
-                  onClick={() => setSelectedLab(lab)}
-                >
-                  <div className="font-medium">{lab.name || lab.path}</div>
-                  <div className="text-sm text-gray-400">Path: {lab.path}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={() => setStep(1)} className="bg-gray-600 hover:bg-gray-500">
-              Back
-            </Button>
-            <Button onClick={() => selectedLab && setStep(3)} disabled={!selectedLab}>
-              Next: Map Roles
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 3: Node mapping */}
-      {step === 3 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-2">Map Nodes to Roles</h3>
-          {loadingNodes && <p>Loading nodes...</p>}
-          {!loadingNodes && nodes.length === 0 && <p>No nodes found.</p>}
-          <div className="space-y-3 max-h-60 overflow-y-auto">
-            {nodes.map((node) => {
-              const mapping = nodeMappings.find((m) => m.nodeId === node.id);
-              const role = mapping?.role || 'unknown';
-              return (
-                <div key={node.id} className="flex items-center gap-3 bg-gray-700 p-2 rounded">
-                  <div className="flex-1">
-                    <div className="font-medium">{node.name || node.id}</div>
-                    <div className="text-sm text-gray-400">ID: {node.id}</div>
-                  </div>
-                  <select
-                    className="p-1 bg-gray-600 rounded"
-                    value={role}
-                    onChange={(e) =>
-                      addNodeMapping({ nodeId: node.id, role: e.target.value as NodeMapping['role'] })
-                    }
-                  >
-                    <option value="unknown">Unknown</option>
-                    <option value="router">Router</option>
-                    <option value="switch">Switch</option>
-                    <option value="firewall">Firewall</option>
-                  </select>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex gap-2 mt-4">
-            <Button onClick={() => setStep(2)} className="bg-gray-600 hover:bg-gray-500">
-              Back
-            </Button>
-            <Button onClick={() => resetStore()} className="bg-green-600 hover:bg-green-700">
-              Finish Import
-            </Button>
-          </div>
-        </div>
-      )}
+    <div className="p-6 max-w-md mx-auto bg-gray-800 rounded-xl shadow-md space-y-4">
+      <h2 className="text-xl font-bold text-white">Step 1: EVE-NG Credentials</h2>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <input
+          type="text"
+          placeholder="Server URL (e.g. https://192.168.1.100)"
+          value={serverUrl}
+          onChange={(e) => setCredentials(e.target.value, username, password)}
+          className="w-full p-2 bg-gray-700 text-white rounded"
+        />
+        <input
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setCredentials(serverUrl, e.target.value, password)}
+          className="w-full p-2 bg-gray-700 text-white rounded"
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setCredentials(serverUrl, username, e.target.value)}
+          className="w-full p-2 bg-gray-700 text-white rounded"
+        />
+        {error && <p className="text-red-400 text-sm">{error}</p>}
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-2 px-4 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded disabled:opacity-50"
+        >
+          {loading ? 'Loading...' : 'Fetch Labs'}
+        </button>
+      </form>
     </div>
   );
 }
+
+function StepSelectLab() {
+  const { labs, setSelectedLab, setStep } = useLabImportStore();
+  return (
+    <div className="p-6 max-w-lg mx-auto bg-gray-800 rounded-xl shadow-md space-y-4">
+      <h2 className="text-xl font-bold text-white">Step 2: Select a Lab</h2>
+      <div className="grid gap-3">
+        {labs.length === 0 && (
+          <p className="text-gray-400">No labs found. Go back and check credentials.</p>
+        )}
+        {labs.map((lab) => (
+          <button
+            key={lab.path || lab.id}
+            onClick={() => {
+              setSelectedLab(lab);
+              setStep(3);
+            }}
+            className="text-left p-3 bg-gray-700 hover:bg-gray-600 rounded text-white"
+          >
+            <span className="font-medium">{lab.name}</span>
+            <span className="text-gray-400 text-sm ml-2">({lab.path})</span>
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={() => setStep(1)}
+        className="text-sm text-cyan-400 hover:underline"
+      >
+        &larr; Back
+      </button>
+    </div>
+  );
+}
+
+function StepNodeMapping() {
+  const { selectedLab, nodeMappings, setNodeMapping, setStep } = useLabImportStore();
+  const [nodes, setNodes] = useState<NodeInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (selectedLab) {
+      setLoading(true);
+      setError('');
+      fetch(`/api/nodes/${encodeURIComponent(selectedLab.path || '')}/list`)
+        .then((r) => r.json())
+        .then((data) => {
+          // handle different response shapes
+          const nodeList = Array.isArray(data) ? data : data.nodes || [];
+          setNodes(nodeList);
+        })
+        .catch((err) => setError(err.message))
+        .finally(() => setLoading(false));
+    }
+  }, [selectedLab]);
+
+  return (
+    <div className="p-6 max-w-lg mx-auto bg-gray-800 rounded-xl shadow-md space-y-4">
+      <h2 className="text-xl font-bold text-white">Step 3: Map Node Roles</h2>
+      {selectedLab && (
+        <p className="text-gray-300">
+          Lab: <strong>{selectedLab.name}</strong>
+        </p>
+      )}
+      {loading && <p className="text-gray-400">Loading nodes...</p>}
+      {error && <p className="text-red-400">{error}</p>}
+      {!loading && !error && nodes.length === 0 && (
+        <p className="text-gray-400">No nodes found for this lab.</p>
+      )}
+      {nodes.map((node) => (
+        <div key={node.id} className="flex items-center justify-between bg-gray-700 p-2 rounded">
+          <div>
+            <span className="text-white font-medium">{node.name || node.id}</span>
+            <span className="text-gray-400 text-sm ml-2">({node.type || 'unknown'})</span>
+          </div>
+          <select
+            value={nodeMappings[node.id] || ''}
+            onChange={(e) => setNodeMapping(node.id, e.target.value)}
+            className="p-1 bg-gray-600 text-white rounded"
+          >
+            <option value="">-- role --</option>
+            {ROLES.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+        </div>
+      ))}
+      <div className="flex justify-between pt-4">
+        <button
+          onClick={() => setStep(2)}
+          className="text-sm text-cyan-400 hover:underline"
+        >
+          &larr; Back
+        </button>
+        <button
+          onClick={() => {
+            // TODO: submit import
+            alert('Lab import completed!');
+            // You can integrate actual submission logic here.
+          }}
+          className="py-2 px-4 bg-green-600 hover:bg-green-700 text-white rounded"
+        >
+          Finish Import
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function LabImportWizard() {
+  const step = useLabImportStore((s) => s.step);
+
+  return (
+    <div className="min-h-[400px]">
+      {step === 1 && <StepCredentials />}
+      {step === 2 && <StepSelectLab />}
+      {step === 3 && <StepNodeMapping />}
+    </div>
+  );
+}
+
+export default LabImportWizard;
