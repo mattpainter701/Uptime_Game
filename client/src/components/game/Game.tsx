@@ -341,8 +341,6 @@ function SettingsPanel() {
   );
 }
 
-}
-
 // Pause overlay — full-screen dark overlay with "PAUSED" text and Resume button
 function PauseOverlay() {
   const resumeGame = useGameStore((state) => state.resumeGame);
