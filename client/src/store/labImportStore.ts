@@ -1,35 +1,27 @@
 import { create } from 'zustand';
 
-export interface Lab {
-  path: string;
+export interface LabItem {
+  id: string;
   name: string;
-  status: string;
+  path: string;
   [key: string]: unknown;
 }
 
-export interface NodeMapping {
-  nodeId: string;
-  role: 'router' | 'switch' | 'firewall' | 'unknown';
-}
-
-interface LabImportState {
-  step: number;
+export interface LabImportState {
+  step: number; // 1: credentials, 2: select lab, 3: map roles
   serverUrl: string;
   username: string;
   password: string;
-  labs: Lab[];
-  selectedLab: Lab | null;
-  nodeMappings: NodeMapping[];
+  labs: LabItem[];
+  selectedLab: LabItem | null;
+  nodeMappings: Record<string, string>; // nodeId -> role
 
   setStep: (step: number) => void;
-  setServerUrl: (url: string) => void;
-  setUsername: (username: string) => void;
-  setPassword: (password: string) => void;
-  setLabs: (labs: Lab[]) => void;
-  setSelectedLab: (lab: Lab | null) => void;
-  setNodeMappings: (mappings: NodeMapping[]) => void;
-  addNodeMapping: (mapping: NodeMapping) => void;
-  resetStore: () => void;
+  setCredentials: (serverUrl: string, username: string, password: string) => void;
+  setLabs: (labs: LabItem[]) => void;
+  setSelectedLab: (lab: LabItem | null) => void;
+  setNodeMapping: (nodeId: string, role: string) => void;
+  reset: () => void;
 }
 
 export const useLabImportStore = create<LabImportState>((set) => ({
@@ -39,23 +31,17 @@ export const useLabImportStore = create<LabImportState>((set) => ({
   password: '',
   labs: [],
   selectedLab: null,
-  nodeMappings: [],
+  nodeMappings: {},
 
   setStep: (step) => set({ step }),
-  setServerUrl: (serverUrl) => set({ serverUrl }),
-  setUsername: (username) => set({ username }),
-  setPassword: (password) => set({ password }),
+  setCredentials: (serverUrl, username, password) => set({ serverUrl, username, password }),
   setLabs: (labs) => set({ labs }),
-  setSelectedLab: (selectedLab) => set({ selectedLab }),
-  setNodeMappings: (nodeMappings) => set({ nodeMappings }),
-  addNodeMapping: (mapping) =>
+  setSelectedLab: (lab) => set({ selectedLab: lab }),
+  setNodeMapping: (nodeId, role) =>
     set((state) => ({
-      nodeMappings: [
-        ...state.nodeMappings.filter((m) => m.nodeId !== mapping.nodeId),
-        mapping,
-      ],
+      nodeMappings: { ...state.nodeMappings, [nodeId]: role },
     })),
-  resetStore: () =>
+  reset: () =>
     set({
       step: 1,
       serverUrl: '',
@@ -63,6 +49,6 @@ export const useLabImportStore = create<LabImportState>((set) => ({
       password: '',
       labs: [],
       selectedLab: null,
-      nodeMappings: [],
+      nodeMappings: {},
     }),
 }));
