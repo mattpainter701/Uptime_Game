@@ -54,6 +54,15 @@ export interface CiscoCliSnapshot {
   interfaces: CiscoInterfaceState[];
   vlans: number[];
   routes: CiscoStaticRoute[];
+  startupConfigSavedAt?: string;
+  commandHistory: string[];
+}
+
+interface CiscoCliConfigState {
+  hostname: string;
+  interfaces: CiscoInterfaceState[];
+  vlans: number[];
+  routes: CiscoStaticRoute[];
 }
 
 export interface CiscoCliSession {
@@ -103,6 +112,8 @@ const EXEC_COMMAND_HELP = [
 const SHOW_HELP = [
   '  version                 Display software version',
   '  running-config          Display active configuration',
+  '  startup-config          Display saved configuration',
+  '  history                 Display recent command history',
   '  ip interface brief      Display interface summary',
   '  interfaces status       Display switchport/admin status summary',
   '  ip route                Display routing table',
@@ -146,6 +157,26 @@ function buildDefaultInterfaces(): Record<string, CiscoInterfaceState> {
     acc[iface.name] = cloneInterface(iface);
     return acc;
   }, {});
+}
+
+function interfacesToRecord(items: CiscoInterfaceState[]): Record<string, CiscoInterfaceState> {
+  return items.reduce<Record<string, CiscoInterfaceState>>((acc, iface) => {
+    acc[iface.name] = cloneInterface(iface);
+    return acc;
+  }, {});
+}
+
+function sortedInterfaces(interfaces: Record<string, CiscoInterfaceState>): CiscoInterfaceState[] {
+  return Object.values(interfaces).map(cloneInterface).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function cloneConfigState(state: CiscoCliConfigState): CiscoCliConfigState {
+  return {
+    hostname: state.hostname,
+    interfaces: state.interfaces.map(cloneInterface),
+    vlans: [...state.vlans],
+    routes: state.routes.map(cloneRoute),
+  };
 }
 
 function tokenize(command: string): string[] {
@@ -428,6 +459,14 @@ export function createCiscoCli(options: CiscoCliOptions = {}): CiscoCliSession {
     : buildDefaultInterfaces();
   const routes = options.routes ? options.routes.map(cloneRoute) : [];
   const vlans = new Set<number>(options.vlans ?? [1]);
+  let startupConfig: CiscoCliConfigState = {
+    hostname,
+    interfaces: sortedInterfaces(interfaces),
+    vlans: Array.from(vlans).sort((left, right) => left - right),
+    routes: routes.map(cloneRoute),
+  };
+  let startupConfigSavedAt: string | undefined;
+  const commandHistory: string[] = [];
   let mode: CiscoCliMode = 'exec';
 
   function ensureInterface(name: string): CiscoInterfaceState {
@@ -450,10 +489,39 @@ export function createCiscoCli(options: CiscoCliOptions = {}): CiscoCliSession {
     return {
       hostname,
       mode,
-      interfaces: Object.values(interfaces).map(cloneInterface).sort((left, right) => left.name.localeCompare(right.name)),
+      interfaces: sortedInterfaces(interfaces),
+      vlans: Array.from(vlans).sort((left, right) => left - right),
+      routes: routes.map(cloneRoute),
+      startupConfigSavedAt,
+      commandHistory: [...commandHistory],
+    };
+  }
+
+  function runningConfigState(): CiscoCliConfigState {
+    return {
+      hostname,
+      interfaces: sortedInterfaces(interfaces),
       vlans: Array.from(vlans).sort((left, right) => left - right),
       routes: routes.map(cloneRoute),
     };
+  }
+
+  function restoreConfigState(state: CiscoCliConfigState): void {
+    hostname = state.hostname;
+    for (const name of Object.keys(interfaces)) {
+      delete interfaces[name];
+    }
+    Object.assign(interfaces, interfacesToRecord(state.interfaces));
+    routes.splice(0, routes.length, ...state.routes.map(cloneRoute));
+    vlans.clear();
+    for (const vlan of state.vlans) {
+      vlans.add(vlan);
+    }
+  }
+
+  function saveStartupConfig(): void {
+    startupConfig = cloneConfigState(runningConfigState());
+    startupConfigSavedAt = new Date().toISOString();
   }
 
   function setMode(nextMode: CiscoCliMode): void {
@@ -468,6 +536,8 @@ export function createCiscoCli(options: CiscoCliOptions = {}): CiscoCliSession {
     if (trimmed === '') {
       return { lines: [], prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
     }
+
+    commandHistory.push(trimmed);
 
     if (trimmed === 'clear') {
       return { lines: [], prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
@@ -514,6 +584,29 @@ export function createCiscoCli(options: CiscoCliOptions = {}): CiscoCliSession {
 
       if (matchesAbbreviation(lowerTokens, ['show', 'running-config']) || matchesAbbreviation(lowerTokens, ['show', 'run'])) {
         return { lines: formatRunningConfig(hostname, snapshot().interfaces, routes, snapshot().vlans), prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
+      }
+
+      if (matchesAbbreviation(lowerTokens, ['show', 'startup-config']) || matchesAbbreviation(lowerTokens, ['show', 'start'])) {
+        return { lines: formatRunningConfig(startupConfig.hostname, startupConfig.interfaces, startupConfig.routes, startupConfig.vlans), prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
+      }
+
+      if (matchesAbbreviation(lowerTokens, ['show', 'history'])) {
+        return { lines: commandHistory.map((entry, index) => `${String(index + 1).padStart(3)}  ${entry}`), prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
+      }
+
+      if (
+        matchesAbbreviation(lowerTokens, ['write', 'memory'])
+        || matchesAbbreviation(lowerTokens, ['wr', 'mem'])
+        || matchesAbbreviation(lowerTokens, ['copy', 'running-config', 'startup-config'])
+      ) {
+        saveStartupConfig();
+        return { lines: ['Building configuration...', '[OK]'], prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
+      }
+
+      if (matchesAbbreviation(lowerTokens, ['reload'])) {
+        restoreConfigState(startupConfig);
+        setMode('exec');
+        return { lines: ['Proceed with reload? [confirm]', 'Reload complete.'], prompt: getPrompt(hostname, mode), mode, shouldDisconnect: false };
       }
 
       if (matchesAbbreviation(lowerTokens, ['show', 'ip', 'interface', 'brief']) || matchesAbbreviation(lowerTokens, ['show', 'ip', 'int', 'bri'])) {

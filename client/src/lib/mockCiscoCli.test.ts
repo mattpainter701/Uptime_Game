@@ -120,4 +120,36 @@ describe('createCiscoCli', () => {
     expect(failure).toContain('Sending 5, 100-byte ICMP Echos to 1.1.1.1');
     expect(failure).toContain('Success rate is 0 percent (0/5)');
   });
+
+  it('saves startup-config, tracks command history, and reloads saved appliance state', () => {
+    const cli = createCiscoCli({ hostname: 'R1' });
+
+    cli.run('configure terminal');
+    cli.run('hostname SAVED1');
+    cli.run('interface GigabitEthernet0/2');
+    cli.run('description saved access port');
+    cli.run('no shutdown');
+    cli.run('end');
+
+    expect(cli.run('write memory').lines).toEqual(['Building configuration...', '[OK]']);
+    expect(cli.snapshot().startupConfigSavedAt).toBeTruthy();
+    expect(cli.run('show startup-config').lines.join('\n')).toContain('hostname SAVED1');
+
+    cli.run('configure terminal');
+    cli.run('hostname UNSAVED1');
+    cli.run('interface GigabitEthernet0/2');
+    cli.run('shutdown');
+    cli.run('end');
+    expect(cli.run('show running-config').lines.join('\n')).toContain('hostname UNSAVED1');
+
+    const reload = cli.run('reload');
+    expect(reload.lines).toContain('Reload complete.');
+    expect(cli.getPrompt()).toBe('SAVED1#');
+    expect(cli.run('show running-config').lines.join('\n')).toContain('hostname SAVED1');
+    expect(cli.snapshot().interfaces.find((item) => item.name === 'GigabitEthernet0/2')?.shutdown).toBe(false);
+
+    const history = cli.run('show history').lines.join('\n');
+    expect(history).toContain('write memory');
+    expect(history).toContain('reload');
+  });
 });
