@@ -6,6 +6,8 @@ import { useGameStore } from './store/gameStore';
 import { getAccessibilityClasses } from './lib/accessibility';
 import type { ColorblindMode } from './types/game';
 import './index.css';
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { KeyboardShortcuts } from "./components/ui/KeyboardShortcuts";
 
 // SVG feColorMatrix filters for each colorblind variant — injected inline
 // so the CSS filter property can reference them via url(#filter-id).
@@ -76,10 +78,12 @@ function AccessibilityProvider({ children }: { children: React.ReactNode }) {
       </svg>
       {children}
     </>
+      <KeyboardShortcuts />
   );
 }
 
 function App() {
+  useKeyboardShortcuts();
   return (
     <div className="w-screen h-screen overflow-hidden bg-[#0a0a15]">
       <AccessibilityProvider>
