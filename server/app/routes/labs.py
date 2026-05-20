@@ -6,8 +6,12 @@ from typing import List, Optional
 
 from ..services.eveng import eveng_client
 from ..models.schemas import LabInfo, APIResponse
+from ..models.labs import LabImportValidationRequest
 
 router = APIRouter(prefix="/labs", tags=["Labs"])
+
+# In-memory store for imported labs (replace with DB in production)
+imported_labs: set = set()
 
 
 @router.get("/", response_model=List[LabInfo])
@@ -49,3 +53,51 @@ async def import_lab(data: dict):
     # Note: In production, you'd create a temporary client with the provided credentials
     labs = await eveng_client.list_labs("/")
     return {"success": True, "labs": [lab.model_dump() for lab in labs]}
+
+
+@router.post("/validate-import")
+async def validate_lab_import(request: LabImportValidationRequest):
+    """
+    Validate a lab import request.
+    
+    Checks:
+    1. EVE-NG lab exists
+    2. All mapped nodes are present
+    3. Lab is not already imported
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    
+    # 1. Check if lab exists in EVE-NG
+    lab = await eveng_client.get_lab(request.lab_path)
+    if not lab:
+        errors.append(f"Lab not found at path: {request.lab_path}")
+        return {"valid": False, "errors": errors, "warnings": warnings}
+    
+    # 2. Check all mapped nodes
+    nodes = await eveng_client.list_nodes(request.lab_path)
+    if nodes is None:
+        errors.append(f"Could not fetch nodes for lab: {request.lab_path}")
+        return {"valid": False, "errors": errors, "warnings": warnings}
+    
+    # Get node identifiers from EVE-NG lab (assume each node has 'id' or 'name')
+    lab_node_ids = set()
+    for node in nodes:
+        # Support both dict and object notation
+        nid = node.get('id') if isinstance(node, dict) else getattr(node, 'id', None)
+        if nid is None:
+            nid = node.get('name') if isinstance(node, dict) else getattr(node, 'name', None)
+        if nid:
+            lab_node_ids.add(nid)
+    
+    mapped_eve_node_ids = [m.eveng_node_id for m in request.node_mappings]
+    missing_nodes = [nid for nid in mapped_eve_node_ids if nid not in lab_node_ids]
+    if missing_nodes:
+        errors.append(f"Mapped nodes not found in lab: {', '.join(missing_nodes)}")
+    
+    # 3. Check duplicate (already imported)
+    if request.lab_path in imported_labs:
+        warnings.append("Lab is already imported. Re-importing may overwrite existing data.")
+    
+    valid = len(errors) == 0
+    return {"valid": valid, "errors": errors, "warnings": warnings}
