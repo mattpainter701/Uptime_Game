@@ -1,58 +1,110 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
-// ---- session state shape ----
-interface LabSession {
-  labId: string | null;
-  nodeConfigs: Record<string, unknown>;
-  terminalHistory: string[];
+export interface TimerState {
+  isRunning: boolean;
+  elapsedSeconds: number;
+  startedAt: number | null; // timestamp when last started/resumed
 }
 
-interface LabState extends LabSession {
-  // actions
-  saveSession: () => void;
-  loadSession: () => LabSession | null;
-  clearSession: () => void;
-  setLabId: (id: string) => void;
-  setNodeConfigs: (configs: Record<string, unknown>) => void;
-  addTerminalHistory: (entry: string) => void;
+export interface LabState {
+  activeLabId: string | null;
+  isActive: boolean;
+  labName: string;
+  timerState: TimerState;
+  // Actions
+  openLab: (labId: string, labName?: string) => void;
+  closeLab: () => void;
+  startTimer: () => void;
+  pauseTimer: () => void;
+  resetTimer: () => void;
 }
 
-export const useLabStore = create<LabState>((set, get) => ({
-  // initial state
-  labId: null,
-  nodeConfigs: {},
-  terminalHistory: [],
+export const useLabStore = create<LabState>()(
+  persist(
+    (set, get) => ({
+      activeLabId: null,
+      isActive: false,
+      labName: '',
+      timerState: {
+        isRunning: false,
+        elapsedSeconds: 0,
+        startedAt: null,
+      },
 
-  // ----- persistence actions -----
-  saveSession: () => {
-    const state = get();
-    const session: LabSession = {
-      labId: state.labId,
-      nodeConfigs: state.nodeConfigs,
-      terminalHistory: state.terminalHistory,
-    };
-    localStorage.setItem('labSession', JSON.stringify(session));
-  },
+      openLab: (labId, labName = '') =>
+        set({
+          activeLabId: labId,
+          isActive: true,
+          labName,
+          timerState: {
+            isRunning: true,
+            elapsedSeconds: 0,
+            startedAt: Date.now(),
+          },
+        }),
 
-  loadSession: (): LabSession | null => {
-    const raw = localStorage.getItem('labSession');
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw) as LabSession;
-    } catch {
-      return null;
+      closeLab: () =>
+        set({
+          activeLabId: null,
+          isActive: false,
+          labName: '',
+          timerState: {
+            isRunning: false,
+            elapsedSeconds: 0,
+            startedAt: null,
+          },
+        }),
+
+      startTimer: () => {
+        const { timerState } = get();
+        if (!timerState.isRunning) {
+          set({
+            timerState: {
+              ...timerState,
+              isRunning: true,
+              startedAt: Date.now(),
+            },
+          });
+        }
+      },
+
+      pauseTimer: () => {
+        const { timerState } = get();
+        if (timerState.isRunning && timerState.startedAt) {
+          const now = Date.now();
+          const additional = Math.floor((now - timerState.startedAt) / 1000);
+          set({
+            timerState: {
+              isRunning: false,
+              elapsedSeconds: timerState.elapsedSeconds + additional,
+              startedAt: null,
+            },
+          });
+        } else {
+          set({
+            timerState: {
+              ...timerState,
+              isRunning: false,
+              startedAt: null,
+            },
+          });
+        }
+      },
+
+      resetTimer: () => {
+        set({
+          timerState: {
+            isRunning: false,
+            elapsedSeconds: 0,
+            startedAt: null,
+          },
+        });
+      },
+    }),
+    {
+      name: 'lab-session-storage',
+      // Persist the entire state, including timerState, automatically
     }
-  },
-
-  clearSession: () => {
-    localStorage.removeItem('labSession');
-  },
-
-  // ----- domain actions (placeholders – extend as needed) -----
-  setLabId: (id) => set({ labId: id }),
-  setNodeConfigs: (configs) => set({ nodeConfigs: configs }),
-  addTerminalHistory: (entry) =>
-    set((state) => ({
-      terminalHistory: [...state.terminalHistory, entry],
-    })),
-}));
+  )
+);
