@@ -1,3 +1,5 @@
+import { useLabStore } from "./store/labStore";
+import { RestoreSessionModal } from "./components/ui/RestoreSessionModal";
 import { useEffect, useMemo } from 'react';
 import { Game } from './components/game/Game';
 import { useGameStore } from './store/gameStore';
@@ -87,4 +89,9 @@ function App() {
   );
 }
 
+      <RestoreSessionModal
+        isOpen={showRestore}
+        onRestore={handleRestore}
+        onDiscard={handleDiscard}
+      />
 export default App;
