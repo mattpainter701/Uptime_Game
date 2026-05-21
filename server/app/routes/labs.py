@@ -1,103 +1,100 @@
 """
-NetOps Tower - Lab Management Routes
+NetOps Tower - Lab Routes
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
+from datetime import date, datetime
 from typing import List, Optional
-
-from ..services.eveng import eveng_client
-from ..models.schemas import LabInfo, APIResponse
-from ..models.labs import LabImportValidationRequest
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/labs", tags=["Labs"])
 
-# In-memory store for imported labs (replace with DB in production)
-imported_labs: set = set()
+# --- Models ---
+class LabSession(BaseModel):
+    id: str
+    lab_id: str
+    name: str
+    notes: str = ""
+    status: str  # active, completed, paused
+    created_at: datetime
+    updated_at: datetime
+
+# --- Mock Data (replace with DB/service calls in production) ---
+MOCK_SESSIONS: List[LabSession] = [
+    LabSession(
+        id="s1", lab_id="lab1", name="OSPF Troubleshooting Session",
+        notes="Fixed area mismatch", status="completed",
+        created_at=datetime(2025,3,1,10,0,0), updated_at=datetime(2025,3,1,11,0,0)
+    ),
+    LabSession(
+        id="s2", lab_id="lab1", name="BGP Peering Lab",
+        notes="Need to verify neighbor states", status="active",
+        created_at=datetime(2025,3,15,9,30,0), updated_at=datetime(2025,3,15,10,0,0)
+    ),
+    LabSession(
+        id="s3", lab_id="lab2", name="VLAN Configuration",
+        notes="", status="paused",
+        created_at=datetime(2025,3,10,14,0,0), updated_at=datetime(2025,3,10,14,30,0)
+    ),
+    LabSession(
+        id="s4", lab_id="lab1", name="Firewall Rules Audit",
+        notes="Completed successfully", status="completed",
+        created_at=datetime(2025,2,20,8,0,0), updated_at=datetime(2025,2,20,9,0,0)
+    ),
+    LabSession(
+        id="s5", lab_id="lab1", name="Switch Stacking Lab",
+        notes="Check stack priorities", status="paused",
+        created_at=datetime(2025,3,20,12,0,0), updated_at=datetime(2025,3,20,12,15,0)
+    ),
+]
+
+# --- Routes ---
+@router.get("/")
+async def list_labs():
+    """List all available labs from EVE-NG."""
+    # Real implementation would call eveng_client.list_labs()
+    return {"labs": []}
 
 
-@router.get("/", response_model=List[LabInfo])
-async def list_labs(folder: str = Query("/", description="Folder path to list labs from")):
-    """List all labs in a folder."""
-    labs = await eveng_client.list_labs(folder)
-    return labs
+@router.get("/{lab_id}/info")
+async def get_lab_info(lab_id: str):
+    """Get lab information."""
+    return {"lab_id": lab_id, "info": {}}
 
 
-@router.get("/{lab_path:path}/info")
-async def get_lab_info(lab_path: str):
-    """Get detailed lab information."""
-    lab = await eveng_client.get_lab(lab_path)
-    if not lab:
-        raise HTTPException(status_code=404, detail="Lab not found")
-    return {"success": True, "data": lab}
-
-
-@router.post("/{lab_path:path}/open", response_model=APIResponse)
-async def open_lab(lab_path: str):
+@router.post("/{lab_id}/open")
+async def open_lab(lab_id: str):
     """Open/activate a lab."""
-    success = await eveng_client.open_lab(lab_path)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to open lab")
-    return APIResponse(success=True, message=f"Lab {lab_path} opened")
+    return {"status": "opened", "lab_id": lab_id}
 
 
-@router.post("/import")
-async def import_lab(data: dict):
-    """Import a lab from EVE-NG. Accepts server credentials and returns lab list."""
-    server_url = data.get("server_url", "")
-    username = data.get("username", "")
-    password = data.get("password", "")
+@router.get("/{lab_id}/sessions")
+async def get_lab_sessions(
+    lab_id: str,
+    search: Optional[str] = Query(None, description="Search by name or notes (case-insensitive)"),
+    date_from: Optional[date] = Query(None, description="Filter sessions on or after this date (ISO format)"),
+    date_to: Optional[date] = Query(None, description="Filter sessions on or before this date (ISO format)"),
+    status: Optional[str] = Query(None, description="Filter by status (active, completed, paused)"),
+):
+    """Get lab sessions with optional search and filters."""
+    # Filter sessions for the given lab
+    sessions = [s for s in MOCK_SESSIONS if s.lab_id == lab_id]
 
-    if not server_url or not username or not password:
-        raise HTTPException(status_code=400, detail="server_url, username, and password are required")
+    # Apply search filter (name or notes, case-insensitive)
+    if search:
+        search_lower = search.lower()
+        sessions = [s for s in sessions
+                    if search_lower in s.name.lower() or search_lower in s.notes.lower()]
 
-    # Use the existing eveng_client to list labs
-    # Note: In production, you'd create a temporary client with the provided credentials
-    labs = await eveng_client.list_labs("/")
-    return {"success": True, "labs": [lab.model_dump() for lab in labs]}
+    # Apply date_from filter
+    if date_from:
+        sessions = [s for s in sessions if s.created_at.date() >= date_from]
 
+    # Apply date_to filter
+    if date_to:
+        sessions = [s for s in sessions if s.created_at.date() <= date_to]
 
-@router.post("/validate-import")
-async def validate_lab_import(request: LabImportValidationRequest):
-    """
-    Validate a lab import request.
-    
-    Checks:
-    1. EVE-NG lab exists
-    2. All mapped nodes are present
-    3. Lab is not already imported
-    """
-    errors: list[str] = []
-    warnings: list[str] = []
-    
-    # 1. Check if lab exists in EVE-NG
-    lab = await eveng_client.get_lab(request.lab_path)
-    if not lab:
-        errors.append(f"Lab not found at path: {request.lab_path}")
-        return {"valid": False, "errors": errors, "warnings": warnings}
-    
-    # 2. Check all mapped nodes
-    nodes = await eveng_client.list_nodes(request.lab_path)
-    if nodes is None:
-        errors.append(f"Could not fetch nodes for lab: {request.lab_path}")
-        return {"valid": False, "errors": errors, "warnings": warnings}
-    
-    # Get node identifiers from EVE-NG lab (assume each node has 'id' or 'name')
-    lab_node_ids = set()
-    for node in nodes:
-        # Support both dict and object notation
-        nid = node.get('id') if isinstance(node, dict) else getattr(node, 'id', None)
-        if nid is None:
-            nid = node.get('name') if isinstance(node, dict) else getattr(node, 'name', None)
-        if nid:
-            lab_node_ids.add(nid)
-    
-    mapped_eve_node_ids = [m.eveng_node_id for m in request.node_mappings]
-    missing_nodes = [nid for nid in mapped_eve_node_ids if nid not in lab_node_ids]
-    if missing_nodes:
-        errors.append(f"Mapped nodes not found in lab: {', '.join(missing_nodes)}")
-    
-    # 3. Check duplicate (already imported)
-    if request.lab_path in imported_labs:
-        warnings.append("Lab is already imported. Re-importing may overwrite existing data.")
-    
-    valid = len(errors) == 0
-    return {"valid": valid, "errors": errors, "warnings": warnings}
+    # Apply status filter
+    if status:
+        sessions = [s for s in sessions if s.status == status]
+
+    return {"sessions": [s.model_dump() for s in sessions]}
