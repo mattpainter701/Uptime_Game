@@ -1,3 +1,4 @@
+from . import snapshots
 """
 NetOps Tower - Lab Routes
 """
@@ -98,3 +99,4 @@ async def get_lab_sessions(
         sessions = [s for s in sessions if s.status == status]
 
     return {"sessions": [s.model_dump() for s in sessions]}
+router.include_router(snapshots.router, prefix="/{lab_id}/snapshots", tags=["Snapshots"])

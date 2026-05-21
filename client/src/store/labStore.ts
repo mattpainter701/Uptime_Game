@@ -8,6 +8,13 @@ export interface TimerState {
 }
 
 export interface LabState {
+export interface Snapshot {
+  id: string;
+  lab_id: string;
+  name: string;
+  timestamp: string;
+  data: any;
+}
   activeLabId: string | null;
   isActive: boolean;
   labName: string;
