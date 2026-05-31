@@ -1,6 +1,6 @@
 import { useLabStore } from "./store/labStore";
 import { RestoreSessionModal } from "./components/ui/RestoreSessionModal";
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Game } from './components/game/Game';
 import { useGameStore } from './store/gameStore';
 import { getAccessibilityClasses } from './lib/accessibility';
@@ -77,25 +77,44 @@ function AccessibilityProvider({ children }: { children: React.ReactNode }) {
         </defs>
       </svg>
       {children}
-    </>
       <KeyboardShortcuts />
+    </>
   );
 }
 
 function App() {
   useKeyboardShortcuts();
+  const [showRestore, setShowRestore] = useState(false);
+  const labStore = useLabStore();
+
+  useEffect(() => {
+    const saved = labStore.loadSession();
+    if (saved) {
+      setShowRestore(true);
+    }
+  }, []);
+
+  const handleRestore = useCallback(() => {
+    setShowRestore(false);
+  }, []);
+
+  const handleDiscard = useCallback(() => {
+    setShowRestore(false);
+    labStore.discardSession();
+  }, [labStore]);
+
   return (
     <div className="w-screen h-screen overflow-hidden bg-[#0a0a15]">
       <AccessibilityProvider>
         <Game />
       </AccessibilityProvider>
-    </div>
-  );
-}
-
       <RestoreSessionModal
         isOpen={showRestore}
         onRestore={handleRestore}
         onDiscard={handleDiscard}
       />
+    </div>
+  );
+}
+
 export default App;

@@ -18,6 +18,9 @@ export interface LabState {
   startTimer: () => void;
   pauseTimer: () => void;
   resetTimer: () => void;
+  loadSession: () => { labId: string; labName: string } | null;
+  saveSession: (labId: string, labName?: string) => void;
+  discardSession: () => void;
 }
 
 export interface Snapshot {
@@ -102,6 +105,40 @@ export const useLabStore = create<LabState>()(
 
       resetTimer: () => {
         set({
+          timerState: {
+            isRunning: false,
+            elapsedSeconds: 0,
+            startedAt: null,
+          },
+        });
+      },
+
+      loadSession: () => {
+        const state = get();
+        if (state.activeLabId) {
+          return { labId: state.activeLabId, labName: state.labName };
+        }
+        return null;
+      },
+
+      saveSession: (labId, labName = '') => {
+        set({
+          activeLabId: labId,
+          isActive: true,
+          labName,
+          timerState: {
+            isRunning: false,
+            elapsedSeconds: 0,
+            startedAt: null,
+          },
+        });
+      },
+
+      discardSession: () => {
+        set({
+          activeLabId: null,
+          isActive: false,
+          labName: '',
           timerState: {
             isRunning: false,
             elapsedSeconds: 0,
