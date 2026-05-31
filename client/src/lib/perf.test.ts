@@ -89,7 +89,7 @@ describe('OutboundBatcher', () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('sends single message immediately', () => {
@@ -160,7 +160,7 @@ describe('InboundDebouncer', () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('delivers the latest value after debounce interval', () => {
