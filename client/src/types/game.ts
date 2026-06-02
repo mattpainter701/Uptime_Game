@@ -147,7 +147,7 @@ export type ColorblindMode = 'none' | 'protanopia' | 'deuteranopia' | 'tritanopi
 export interface GameSettings {
   musicVolume: number;
   sfxVolume: number;
-  terminalTheme: 'dark' | 'light' | 'cyberpunk' | 'amber-retro' | 'solarized-dark';
+  terminalTheme: 'dark' | 'light' | 'cyberpunk' | 'amber-retro' | 'solarized-dark' | 'retro-green';
   terminalFontSize: number;
   terminalFontFamily: 'jetbrains' | 'fira' | 'source' | 'ibm' | 'ubuntu';
   // Accessibility

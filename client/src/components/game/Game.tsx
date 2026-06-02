@@ -127,7 +127,7 @@ function SettingsPanel() {
               <div>
                 <label className="block text-white mb-2">Theme</label>
                 <div className="flex gap-2">
-                  {(['cyberpunk', 'dark', 'light'] as const).map((theme) => (
+                  {(['cyberpunk', 'dark', 'light', 'amber-retro', 'solarized-dark', 'retro-green'] as const).map((theme) => (
                     <button
                       key={theme}
                       onClick={() => updateSettings({ terminalTheme: theme })}
