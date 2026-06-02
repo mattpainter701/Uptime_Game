@@ -48,19 +48,19 @@ const COLORS = {
 };
 
 // Modern L-shaped desk
-function ModernDesk() {
+function ModernDesk({ deskColor }: { deskColor: string }) {
   return (
     <group position={[0, 0, -2]}>
       {/* Main desktop - white laminate */}
       <mesh position={[0, 0.74, 0]} castShadow receiveShadow>
         <boxGeometry args={[1.8, 0.03, 0.8]} />
-        <meshStandardMaterial color={COLORS.deskWhite} roughness={0.3} />
+        <meshStandardMaterial color={deskColor} roughness={0.3} />
       </mesh>
 
       {/* L-extension */}
       <mesh position={[-1.05, 0.74, 0.45]} castShadow receiveShadow>
         <boxGeometry args={[0.7, 0.03, 0.7]} />
-        <meshStandardMaterial color={COLORS.deskWhite} roughness={0.3} />
+        <meshStandardMaterial color={deskColor} roughness={0.3} />
       </mesh>
 
       {/* Metal legs */}
@@ -88,7 +88,7 @@ function ModernDesk() {
 }
 
 // Triple ultrawide monitor setup
-function MonitorSetup() {
+function MonitorSetup({ monitorCount }: { monitorCount: 1 | 2 | 3 }) {
   const screenRefs = [
     useRef<THREE.Mesh>(null),
     useRef<THREE.Mesh>(null),
@@ -137,25 +137,25 @@ function MonitorSetup() {
   return (
     <group position={[0, 1.05, -2.35]}>
       <Monitor ref={screenRefs[0]} width={0.65} height={0.38} />
-      <Monitor ref={screenRefs[1]} width={0.5} height={0.3} posX={-0.52} angle={0.35} />
-      <Monitor ref={screenRefs[2]} width={0.5} height={0.3} posX={0.52} angle={-0.35} />
+      {monitorCount >= 2 && <Monitor ref={screenRefs[1]} width={0.5} height={0.3} posX={-0.52} angle={0.35} />}
+      {monitorCount >= 3 && <Monitor ref={screenRefs[2]} width={0.5} height={0.3} posX={0.52} angle={-0.35} />}
     </group>
   );
 }
 
 // Ergonomic office chair - facing desk (toward -Z)
-function OfficeChair() {
+function OfficeChair({ chairColor }: { chairColor: string }) {
   return (
     <group position={[0, 0, -1.15]}>
       {/* Seat */}
       <mesh position={[0, 0.48, 0]} castShadow>
         <boxGeometry args={[0.5, 0.08, 0.5]} />
-        <meshStandardMaterial color={COLORS.chairBlack} roughness={0.7} />
+        <meshStandardMaterial color={chairColor} roughness={0.7} />
       </mesh>
       {/* Backrest - toward +Z (behind seated player who faces -Z) */}
       <mesh position={[0, 0.85, 0.22]} castShadow>
         <boxGeometry args={[0.48, 0.55, 0.06]} />
-        <meshStandardMaterial color={COLORS.chairBlack} roughness={0.7} />
+        <meshStandardMaterial color={chairColor} roughness={0.7} />
       </mesh>
       {/* Lumbar support */}
       <mesh position={[0, 0.65, 0.18]} castShadow>
@@ -352,6 +352,81 @@ function DeskAccessories() {
 }
 
 // Office Printer
+function DeskDecoration({ decoration }: { decoration: string }) {
+  switch (decoration) {
+    case 'plant_small':
+      return <DeskPlant position={[-0.85, 0.77, -1.86]} />;
+    case 'action_figure':
+      return (
+        <group position={[0.7, 0.78, -2.15]}>
+          <mesh castShadow>
+            <boxGeometry args={[0.06, 0.12, 0.06]} />
+            <meshStandardMaterial color="#ff4500" roughness={0.5} />
+          </mesh>
+          <mesh position={[0, 0.1, 0]}>
+            <sphereGeometry args={[0.04, 8, 8]} />
+            <meshStandardMaterial color="#ffd700" />
+          </mesh>
+        </group>
+      );
+    case 'nameplate':
+      return (
+        <group position={[-0.7, 0.8, -2.05]}>
+          <mesh>
+            <boxGeometry args={[0.15, 0.04, 0.02]} />
+            <meshStandardMaterial color="#b8860b" metalness={0.8} roughness={0.2} />
+          </mesh>
+        </group>
+      );
+    case 'rgb_strip':
+      return (
+        <group>
+          <mesh position={[0, 0.78, -2.28]}>
+            <boxGeometry args={[1.6, 0.008, 0.02]} />
+            <meshStandardMaterial color="#ff00ff" emissive="#ff00ff" emissiveIntensity={0.6} />
+          </mesh>
+        </group>
+      );
+    case 'coffee_mug_gold':
+      return (
+        <group position={[-0.6, 0.77, -1.95]}>
+          <mesh castShadow>
+            <cylinderGeometry args={[0.035, 0.03, 0.08, 12]} />
+            <meshStandardMaterial color="#ffd700" metalness={0.8} roughness={0.2} />
+          </mesh>
+        </group>
+      );
+    case 'certificate_frame':
+      return (
+        <group position={[-4.4, 1.65, -3.6]} rotation={[0, Math.PI / 2, 0]}>
+          <mesh>
+            <boxGeometry args={[0.35, 0.25, 0.02]} />
+            <meshStandardMaterial color="#8b4513" roughness={0.6} />
+          </mesh>
+          <mesh position={[0, 0, 0.015]}>
+            <planeGeometry args={[0.28, 0.18]} />
+            <meshStandardMaterial color="#f5f5dc" />
+          </mesh>
+        </group>
+      );
+    case 'mini_server':
+      return (
+        <group position={[0.85, 0.77, -1.9]}>
+          <mesh>
+            <boxGeometry args={[0.08, 0.06, 0.06]} />
+            <meshStandardMaterial color="#2d2d2d" metalness={0.5} roughness={0.5} />
+          </mesh>
+          <mesh position={[0.04, 0, 0]}>
+            <boxGeometry args={[0.01, 0.04, 0.04]} />
+            <meshStandardMaterial color="#00ff41" emissive="#00ff41" emissiveIntensity={0.5} />
+          </mesh>
+        </group>
+      );
+    default:
+      return null;
+  }
+}
+
 function Printer() {
   return (
     <group position={[-3.5, 0, -3]}>
@@ -1952,15 +2027,17 @@ function Decorations() {
 }
 
 export function PlayerOffice({ onElevatorUse }: FloorProps) {
+  const deskCustomization = useGameStore((state) => state.deskCustomization);
   return (
     <group>
       <Room />
       <Windows />
       <CityView />
-      <ModernDesk />
-      <MonitorSetup />
-      <OfficeChair />
+      <ModernDesk deskColor={deskCustomization.deskColor} />
+      <MonitorSetup monitorCount={deskCustomization.monitorCount} />
+      <OfficeChair chairColor={deskCustomization.chairColor} />
       <DeskAccessories />
+      <DeskDecoration decoration={deskCustomization.decoration} />
       <ComputerInteraction />
       <SupplyTable />
       <ElevatorDoor onUse={onElevatorUse} />
