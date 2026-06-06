@@ -754,20 +754,26 @@ export const useGameStore = create<GameState>()(
         player: { ...state.player, credits: state.player.credits + amount }
       })),
 
-      addXp: (amount) => set((state) => {
-        const newXp = state.player.xp + amount;
+      addXp: (amount) => {
+        const oldPlayer = get().player;
+        const newXp = oldPlayer.xp + amount;
         const levelInfo = getCareerLevelFromXp(newXp);
-        return {
+        const oldLevel = oldPlayer.level;
+        set({
           player: {
-            ...state.player,
+            ...oldPlayer,
             xp: newXp,
             level: levelInfo.level,
             title: levelInfo.title,
             floor: levelInfo.floor,
             xpToNextLevel: getXpToNextCareerLevel(newXp),
           }
-        };
-      }),
+        });
+        // Auto-save on level-up
+        if (levelInfo.level > oldLevel) {
+          get().saveGame();
+        }
+      },
 
       addReputation: (amount) => set((state) => ({
         player: { ...state.player, reputation: Math.max(0, state.player.reputation + amount) }
