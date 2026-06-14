@@ -8,6 +8,7 @@ import '@xterm/xterm/css/xterm.css';
 import { useGameStore } from '../../store/gameStore';
 import { ConsoleWebSocket } from '../../services/websocket';
 import { createMockCliForHostname } from '../../lib/mockApplianceCliRegistry';
+import { createDecodeCli } from '../../lib/mockDecodeCli';
 
 interface TerminalTheme {
   background: string;
@@ -228,6 +229,8 @@ export function Terminal({
     return createMockCliForHostname(hostname);
   }, []);
   const cliRef = useRef(createCli(nodeName));
+  const decodeCliRef = useRef(createDecodeCli());
+  const inDecodeModeRef = useRef(false);
   const connectedRef = useRef(false);
   const realModeRef = useRef(false);
   const [connected, setConnected] = useState(false);
@@ -276,7 +279,7 @@ export function Terminal({
     const trimmed = command.trim();
 
     if (trimmed === '') {
-      writePrompt(term);
+      writePrompt(term, inDecodeModeRef.current ? decodeCliRef.current.getPrompt() : undefined);
       return;
     }
 
@@ -292,7 +295,44 @@ export function Terminal({
 
     if (trimmed.toLowerCase() === 'clear') {
       term.clear();
-      writePrompt(term);
+      writePrompt(term, inDecodeModeRef.current ? decodeCliRef.current.getPrompt() : undefined);
+      return;
+    }
+
+    // Handle decode mode commands
+    if (inDecodeModeRef.current) {
+      const result = decodeCliRef.current.run(command);
+      term.writeln('');
+      result.lines.forEach((line) => {
+        term.writeln(line);
+        appendSessionLog(line);
+      });
+
+      if (result.shouldDisconnect) {
+        onClose?.();
+        return;
+      }
+
+      // Check if user wants to exit decode mode
+      if (trimmed.toLowerCase() === 'exit' || trimmed.toLowerCase() === 'quit' || trimmed.toLowerCase() === 'q') {
+        inDecodeModeRef.current = false;
+        writePrompt(term, cliRef.current.getPrompt());
+      } else {
+        writePrompt(term, result.prompt);
+      }
+      return;
+    }
+
+    // Handle regular commands
+    if (trimmed.toLowerCase() === 'decode') {
+      inDecodeModeRef.current = true;
+      const result = decodeCliRef.current.run('start');
+      term.writeln('');
+      result.lines.forEach((line) => {
+        term.writeln(line);
+        appendSessionLog(line);
+      });
+      writePrompt(term, result.prompt);
       return;
     }
 
@@ -403,6 +443,7 @@ export function Terminal({
           appendSessionLog('Connected (Demo Mode)');
           term.writeln('');
           term.writeln('\x1b[1;37mType "help" for available commands\x1b[0m');
+          term.writeln('\x1b[1;37mType "decode" to play Protocol Decoder mini-game\x1b[0m');
           writePrompt(term, cliRef.current.getPrompt());
           setConnected(true);
           setConnectionStatus('connected');
@@ -416,6 +457,7 @@ export function Terminal({
         appendSessionLog('Connected (Demo Mode)');
         term.writeln('');
         term.writeln('\x1b[1;37mType "help" for available commands\x1b[0m');
+        term.writeln('\x1b[1;37mType "decode" to play Protocol Decoder mini-game\x1b[0m');
         writePrompt(term, cliRef.current.getPrompt());
         setConnected(true);
         setConnectionStatus('connected');
@@ -439,7 +481,9 @@ export function Terminal({
         processCommand(term, currentInputRef.current);
         currentInputRef.current = '';
       } else if (code === 9) { // Tab — autocomplete
-        const completions = cliRef.current.autocomplete?.(currentInputRef.current);
+        const completions = inDecodeModeRef.current
+          ? decodeCliRef.current.autocomplete?.(currentInputRef.current)
+          : cliRef.current.autocomplete?.(currentInputRef.current);
         if (completions && completions.length === 1) {
           // Single completion: replace the last word
           const trimmed = currentInputRef.current.trimEnd();
@@ -455,7 +499,7 @@ export function Terminal({
           }
         } else if (completions && completions.length > 1) {
           term.write('\r\n' + completions.join('  ') + '\r\n');
-          writePrompt(term, cliRef.current.getPrompt());
+          writePrompt(term, inDecodeModeRef.current ? decodeCliRef.current.getPrompt() : cliRef.current.getPrompt());
           term.write(currentInputRef.current);
         }
       } else if (code === 127) { // Backspace
@@ -574,7 +618,7 @@ export function Terminal({
       term.write('\r\n\x1b[1;33m⏸ Game paused — input disabled. Press Esc or click Resume to continue.\x1b[0m\r\n');
     } else {
       term.write('\r\n\x1b[1;32m▶ Game resumed.\x1b[0m\r\n');
-      writePrompt(term, cliRef.current.getPrompt());
+      writePrompt(term, inDecodeModeRef.current ? decodeCliRef.current.getPrompt() : cliRef.current.getPrompt());
     }
   }, [isPaused, writePrompt]);
 
